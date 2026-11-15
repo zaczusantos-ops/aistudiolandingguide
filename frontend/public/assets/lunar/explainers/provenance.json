@@ -267,7 +267,7 @@
       ]
     }
   ],
-  "package_bytes_excluding_manifest": 2610236,
+  "package_bytes_excluding_manifest": 2610234,
   "validation": {
     "ffprobe": "Passed: each derivative is 12 s, 1280×720, H.264, yuv420p, 24 fps, with zero audio streams.",
     "decoded_to_end": true,
