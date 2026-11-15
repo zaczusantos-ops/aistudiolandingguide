@@ -341,6 +341,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
 
   const threeCtrlRef = useRef<{
     requestRender: () => void;
+    refreshOverlay: () => void;
     flyToSouthPole: () => void;
     flyToFullMoon: () => void;
     zoomStep: (delta: number) => void;
@@ -977,6 +978,18 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
           width: rect.width, height: rect.height + (element === directionNoteRef.current ? 20 : 0),
         });
       }
+      // Reserve visible pin artwork, not its larger transparent click target.
+      for (const pin of [...Object.values(sitePinRefs.current), ...Object.values(slotMarkerRefs.current)]) {
+        if (!pin || getComputedStyle(pin).visibility === 'hidden') continue;
+        const artwork = pin.classList.contains('vp-site-pin')
+          ? pin.querySelector('circle:last-of-type') : pin;
+        if (!artwork) continue;
+        const rect = artwork.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) reservedRects.push({
+          x: rect.left - stageRect.left, y: rect.top - stageRect.top,
+          width: rect.width, height: rect.height,
+        });
+      }
       const layout = layoutOrbitalDirections({
         observerLocal: { x: observerUnit.x * observerRadius, y: observerUnit.y * observerRadius, z: observerUnit.z * observerRadius },
         sunDirectionLocal: sunUnit, earthDirectionLocal: earthUnit,
@@ -991,6 +1004,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
           group.dataset.directionLocal = `${direction.x},${direction.y},${direction.z}`;
           group.dataset.observerLat = String(observerLat);
           group.dataset.observerLon = String(observerLon);
+          group.dataset.renderedLayoutKey = p.overlayLayoutKey;
         }
       }
       if (directionNoteRef.current) {
@@ -1245,6 +1259,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
 
     threeCtrlRef.current = {
       requestRender,
+      refreshOverlay: syncMarkers,
       beginCameraTransition: (started: boolean) => {
         resetMoonOrientation(moonGroup);
         setTargetLayout(started, isSoftwareGl || reduceMotion);
@@ -1309,7 +1324,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     };
 
     const onDisclosureLayout = (event: Event) => {
-      if (event.target instanceof Element && event.target.closest('.side-drawer, .popover-card')) requestRender();
+      if (event.target instanceof Element && event.target.closest('.side-drawer, .popover-card')) syncMarkers();
     };
     document.addEventListener('toggle', onDisclosureLayout, true);
     requestRender();
@@ -1368,7 +1383,12 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     if (mode === '3d') {
       ctrl.requestRender();
     }
-  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, currentUtc, overlayLayoutKey, viewportSize.w, viewportSize.h]);
+  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, currentUtc, viewportSize.w, viewportSize.h]);
+
+  useEffect(() => {
+    // Panel-only changes do not need a new GPU frame or its completion fence.
+    threeCtrlRef.current?.refreshOverlay();
+  }, [overlayLayoutKey]);
 
   const svgW = viewportSize.w;
   const svgH = viewportSize.h;
@@ -1408,6 +1428,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
       className="lunar-stage"
       data-viewport-mode={mode}
       data-surface-mode={surfaceMode}
+      data-overlay-layout-key={overlayLayoutKey}
       data-site-a={entries[0]?.site.id ?? ''}
       data-slots-count={entries.length}
       tabIndex={hasStarted && mode === '3d' ? 0 : -1}

@@ -2,6 +2,8 @@
 .orbital-direction * {
   pointer-events: none;
   user-select: none;
+  transition: none !important;
+  animation: none !important;
 }
 
 /* A visible child line must not escape an unavailable parent SVG group. */
