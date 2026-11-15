@@ -47,6 +47,7 @@ export function LunarViewport({
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [detailStatus, setDetailStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [topographyStatus, setTopographyStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [reliefStatus, setReliefStatus] = useState<'loading' | 'global' | 'ready' | 'unavailable' | 'partial'>('loading');
   const statusCallback = useRef(onStatusChange);
   statusCallback.current = onStatusChange;
   useEffect(() => { statusCallback.current?.(renderStatus); }, [renderStatus]);
@@ -106,6 +107,7 @@ export function LunarViewport({
             pause: () => { if (!cancelled) pause(); },
             detail: status => { if (!cancelled) setDetailStatus(status); },
             topography: status => { if (!cancelled) setTopographyStatus(status); },
+            relief: status => { if (!cancelled) setReliefStatus(status); },
             project,
             pick: (lat, lon) => {
               const callback = callbacks.current;
@@ -147,11 +149,19 @@ export function LunarViewport({
           ? 'LOLA elevation unavailable · LROC mosaic shown'
           : options.topography && topographyStatus === 'ready'
             ? 'LOLA elevation colors · visual relief only'
+      : reliefStatus === 'ready'
+        ? 'LOLA relief · exaggerated heights · illustrative lighting'
+      : reliefStatus === 'global'
+        ? 'Global relief · polar detail loading'
+      : reliefStatus === 'partial'
+        ? 'Global relief · polar detail unavailable'
+      : reliefStatus === 'unavailable'
+        ? 'Surface imagery only · relief unavailable'
       : options.detail && detailStatus === 'ready'
         ? 'LOLA polar reference · lighting is illustrative'
         : options.detail && detailStatus === 'unavailable'
           ? 'Surface reference · polar detail unavailable'
-          : 'Surface reference · lighting is illustrative';
+          : 'Surface imagery · relief loading';
 
   const sceneBottom = renderStatus === 'unavailable' ? 80 : showCameraTools ? (viewOptionsOpen ? 148 : 96) : 48;
   const sceneStyle: React.CSSProperties = { position: 'absolute', left: 0, right: 0, top: 0, bottom: sceneBottom, height: 'auto' };
@@ -159,7 +169,7 @@ export function LunarViewport({
   return (
     <div className={`lunar-stage${embedded ? ' lunar-stage--embedded' : ''}`}
       style={embedded ? { position: 'relative', inset: 'auto', width: '100%', height: '100%', minHeight: 320, zIndex: 0, overflow: 'hidden', background: 'transparent' } : undefined}
-      data-viewport-mode={mode} data-surface-mode={surfaceMode} data-render-status={renderStatus}
+      data-viewport-mode={mode} data-surface-mode={surfaceMode} data-render-status={renderStatus} data-relief-status={reliefStatus}
       data-site-a={entries[0]?.site.id ?? ''} data-slots-count={entries.length}
       tabIndex={hasStarted && mode === '3d' && renderStatus === 'ready' ? 0 : -1}
       role="region" aria-label="Interactive Moon" aria-describedby={instructionsId} onKeyDown={keyDown}

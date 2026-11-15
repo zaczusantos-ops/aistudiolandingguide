@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { buildDisplacedMoonGeometry, readPackedElevationRaster, sampleTerrainHeightKm, terrainRadius, yieldForMoonTerrain, type TerrainRasters, type PackedElevationRaster } from './terrainRecovery';
 
 /** Display-only coordinates retained from the original lunar viewport. */
 export function moonVector(latitudeDeg: number, longitudeEastDeg: number): THREE.Vector3 {
@@ -46,12 +47,14 @@ interface Callbacks {
   project: (markers: ProjectedMoonMarker[]) => void;
   pick: (latDeg: number, lonEastDeg: number) => void;
   reticle: (latDeg: number, lonEastDeg: number) => void;
+  relief?: (status: 'loading' | 'global' | 'ready' | 'unavailable' | 'partial') => void;
 }
 
 /**
  * A small, lazy renderer: one 4K-triangle sphere and one existing LROC mosaic.
- * No CPU terrain atlas, environment-map precomputation, shadows or displaced DEM.
- * Optional polar detail is sampled on the GPU and is only a visual reference.
+ * Real displaced global/polar relief progressively replaces the first sphere.
+ * Texture decode and mesh work yield between bounded chunks; no derived atlas
+ * or environment-map precomputation blocks the first frame. Display use only.
  */
 export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOptions, callbacks: Callbacks): MoonRuntime {
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'low-power' });
@@ -63,13 +66,15 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
   // A single CSS pixel per device pixel is deliberately capped for weak GPUs.
   renderer.setPixelRatio(1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
   renderer.setClearColor(0x000000, 0);
   renderer.domElement.setAttribute('aria-hidden', 'true');
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:pan-y';
   mount.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 20);
-  camera.position.set(-3.75, 0.55, 0.32);
+  camera.position.set(-4.15, 0.6, 0.35);
   const controls = new OrbitControls(camera, renderer.domElement);
   // OrbitControls writes touch-action:none during construction.
   renderer.domElement.style.touchAction = 'pan-y';
@@ -89,77 +94,111 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
   const group = new THREE.Group();
   // Keep north up; spin this centered body's own pole axis, never its position.
   scene.add(group);
-  const geometry = new THREE.SphereGeometry(1, 64, 32);
+  let geometry: THREE.BufferGeometry = new THREE.SphereGeometry(1, 64, 32);
   // Native SphereGeometry starts u=0 at local longitude 0, whereas the bundled
   // NASA mosaic starts at -180 degrees. The half-turn preserves registration.
   const uv = geometry.getAttribute('uv');
   for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) + 0.5);
-  const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.97, metalness: 0, envMapIntensity: 0.05 });
   const uniforms = {
     detail: { value: 0 }, polar: { value: null as THREE.Texture | null },
     topography: { value: 0 }, elevation: { value: null as THREE.Texture | null },
+    relief: { value: 0 }, polarReady: { value: 0 },
   };
-  // Retain the original LOLA elevation palette, in the renderer's linear space.
   const color = (hex: string) => `vec3(${new THREE.Color(hex).toArray().join(',')})`;
   material.onBeforeCompile = shader => {
     shader.uniforms.uMoonDetail = uniforms.detail;
     shader.uniforms.uMoonPolar = uniforms.polar;
     shader.uniforms.uMoonTopography = uniforms.topography;
     shader.uniforms.uMoonElevation = uniforms.elevation;
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vMoonPoint;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMoonPoint = normalize(position);');
+    shader.uniforms.uMoonRelief = uniforms.relief;
+    shader.uniforms.uMoonPolarReady = uniforms.polarReady;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vMoonPoint;
+        varying vec3 vMoonRight;
+        varying vec3 vMoonUp;
+        varying vec3 vMoonForward;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vMoonPoint = normalize(position);
+        vMoonRight = normalize(normalMatrix * vec3(1.0, 0.0, 0.0));
+        vMoonUp = normalize(normalMatrix * vec3(0.0, 1.0, 0.0));
+        vMoonForward = normalize(normalMatrix * vec3(0.0, 0.0, 1.0));`);
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vMoonPoint;
+      varying vec3 vMoonRight;
+      varying vec3 vMoonUp;
+      varying vec3 vMoonForward;
       uniform sampler2D uMoonPolar;
+      uniform sampler2D uMoonElevation;
       uniform float uMoonDetail;
       uniform float uMoonTopography;
-      uniform sampler2D uMoonElevation;
-      float decodeHeight(vec2 rg) {
-        return (rg.r * 65280.0 + rg.g * 255.0) / 65535.0;
+      uniform float uMoonRelief;
+      uniform float uMoonPolarReady;
+      float decodeHeight(vec2 rg) { return -9.5 + (rg.r * 65280.0 + rg.g * 255.0) / 65535.0 * 20.5; }
+      vec2 globalUv(vec3 p) {
+        return vec2(fract(atan(p.z, -p.x) / 6.28318530718 + 0.5), 0.5 - asin(clamp(p.y, -1.0, 1.0)) / 3.14159265359);
+      }
+      float terrainHeight(vec3 point) {
+        vec3 p = normalize(point);
+        float h = decodeHeight(texture2D(uMoonElevation, globalUv(p)).rg);
+        if (uMoonPolarReady > 0.5 && p.y < -0.9851093) {
+          vec2 stereo = vec2(p.z, -p.x) / (1.0 - p.y);
+          vec2 uv = vec2(0.5 + stereo.x / 0.17497467, 0.5 - stereo.y / 0.17497467);
+          float lat = asin(clamp(p.y, -1.0, 1.0)) * 57.295779513;
+          float blend = smoothstep(80.1, 81.4, -lat);
+          h = mix(h, decodeHeight(texture2D(uMoonPolar, clamp(uv, 0.0, 1.0)).rg), blend);
+        }
+        return h;
       }
       vec3 elevationColor(float km) {
-        vec3 c0 = ${color('#1d1459')};
-        vec3 c1 = ${color('#2563eb')};
-        vec3 c2 = ${color('#06b6d4')};
-        vec3 c3 = ${color('#22c55e')};
-        vec3 c4 = ${color('#eab308')};
-        vec3 c5 = ${color('#ef4444')};
-        vec3 c6 = ${color('#fce7f3')};
+        vec3 c0 = ${color('#1d1459')}; vec3 c1 = ${color('#2563eb')};
+        vec3 c2 = ${color('#06b6d4')}; vec3 c3 = ${color('#22c55e')};
+        vec3 c4 = ${color('#eab308')}; vec3 c5 = ${color('#ef4444')}; vec3 c6 = ${color('#fce7f3')};
         if (km < -5.5) return mix(c0, c1, clamp((km + 9.0) / 3.5, 0.0, 1.0));
         if (km < -2.0) return mix(c1, c2, (km + 5.5) / 3.5);
         if (km < 0.0) return mix(c2, c3, (km + 2.0) / 2.0);
         if (km < 2.5) return mix(c3, c4, km / 2.5);
         if (km < 5.5) return mix(c4, c5, (km - 2.5) / 3.0);
         return mix(c5, c6, clamp((km - 5.5) / 3.0, 0.0, 1.0));
-      }
-      float polarHeight(vec2 p) {
-        vec2 rg = texture2D(uMoonPolar, p).rg;
-        return decodeHeight(rg);
       }`).replace('#include <map_fragment>', `#include <map_fragment>
-      if (uMoonTopography > 0.5) {
-        vec3 point = normalize(vMoonPoint);
-        vec2 mapUv = vec2(fract(atan(point.z, -point.x) / 6.28318530718 + 0.5), 0.5 - asin(clamp(point.y, -1.0, 1.0)) / 3.14159265359);
-        float heightKm = -9.5 + decodeHeight(texture2D(uMoonElevation, mapUv).rg) * 20.5;
-        diffuseColor.rgb = elevationColor(heightKm);
-      }
-      if (uMoonDetail > 0.5 && vMoonPoint.y < -0.9848) {
-        vec2 p = normalize(vMoonPoint).zx;
-        p.y = -p.y;
-        p /= (1.0 - normalize(vMoonPoint).y) * 0.17497;
-        p = vec2(0.5 + p.x, 0.5 - p.y);
-        if (all(greaterThan(p, vec2(0.003))) && all(lessThan(p, vec2(0.997)))) {
-          float dx = polarHeight(p + vec2(0.001, 0.0)) - polarHeight(p - vec2(0.001, 0.0));
-          float dy = polarHeight(p + vec2(0.0, 0.001)) - polarHeight(p - vec2(0.0, 0.001));
-          float shade = clamp(0.92 + (dx - dy) * 13.0, 0.35, 1.3);
-          diffuseColor.rgb *= mix(1.0, shade, smoothstep(0.9848, 0.989, -vMoonPoint.y));
-        }
+      vec3 moonP = normalize(vMoonPoint);
+      vec3 moonDetailNormal = moonP;
+      if (uMoonTopography > 0.5) diffuseColor.rgb = elevationColor(terrainHeight(moonP));
+      if (uMoonRelief > 0.5) {
+        vec3 east = length(moonP.xz) > 0.0001 ? normalize(vec3(moonP.z, 0.0, -moonP.x)) : vec3(0.0, 0.0, 1.0);
+        vec3 north = normalize(cross(moonP, east));
+        float polarWeight = uMoonPolarReady * smoothstep(79.5, 81.2, abs(asin(moonP.y) * 57.295779513));
+        float stepAngle = mix(0.00306796, 0.00034175, polarWeight);
+        float hC = terrainHeight(moonP);
+        float hE = terrainHeight(moonP + east * stepAngle);
+        float hW = terrainHeight(moonP - east * stepAngle);
+        float hN = terrainHeight(moonP + north * stepAngle);
+        float hS = terrainHeight(moonP - north * stepAngle);
+        float gain = mix(2.05, 1.42, polarWeight) * (1.0 + uMoonDetail * 0.15);
+        float slopeE = (hE - hW) / (2.0 * stepAngle * 1737.4) * gain;
+        float slopeN = (hN - hS) / (2.0 * stepAngle * 1737.4) * gain;
+        moonDetailNormal = normalize(moonP - east * slopeE - north * slopeN);
+        float curvature = hC - (hE + hW + hN + hS) * 0.25;
+        diffuseColor.rgb *= clamp(1.0 + curvature * mix(0.035, 0.20, polarWeight), 0.84, 1.18);
+      }`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      if (uMoonRelief > 0.5) {
+        mat3 objectToView = mat3(normalize(vMoonRight), normalize(vMoonUp), normalize(vMoonForward));
+        vec3 detailView = normalize(objectToView * moonDetailNormal);
+        vec3 baseView = normalize(objectToView * moonP);
+        normal = normalize(normal + (detailView - baseView) * 0.85);
       }`);
   };
+  material.customProgramCacheKey = () => 'lunar-progressive-lola-relief-v1';
   const mesh = new THREE.Mesh(geometry, material);
   group.add(mesh);
-  scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-  const presentationLight = new THREE.DirectionalLight(0xffffff, 0.65);
-  presentationLight.position.set(-3, 2, 3);
+  scene.add(new THREE.HemisphereLight(0xd4d4d8, 0x09090b, 0.24));
+  const presentationLight = new THREE.DirectionalLight(0xffffff, 2.65);
+  presentationLight.position.set(-1.7, 2.8, 3.5);
   scene.add(presentationLight);
+  const rimLight = new THREE.DirectionalLight(0xa1a1aa, 0.18);
+  rimLight.position.set(4, -2, -5);
+  scene.add(rimLight);
   const raycaster = new THREE.Raycaster();
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   let options = initial;
@@ -179,6 +218,13 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
   let visible = true;
   let reportedReady = false;
   let lastReticle: { latDeg: number; lonEastDeg: number } | undefined;
+  let terrainRasters: TerrainRasters | undefined;
+  let renderedRasters: TerrainRasters | undefined;
+  let southRaster: PackedElevationRaster | undefined;
+  let buildVersion = 0;
+  let reliefStarted = false;
+  let southFailed = false;
+  let pendingRelief: 'global' | 'ready' | 'partial' | undefined;
   const allowRotation = () => options.active && options.autoRotate && !pausedByInteraction && !reduceMotion?.matches && !document.hidden && visible;
   const request = () => { if (!disposed && !frame && options.active && !document.hidden && visible) frame = requestAnimationFrame(draw); };
   const pause = () => {
@@ -189,7 +235,8 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
     camera.updateMatrixWorld(true);
     const width = mount.clientWidth || 640, height = mount.clientHeight || 480;
     callbacks.project(options.markers.map(marker => {
-      const world = group.localToWorld(moonVector(marker.latDeg, marker.lonEastDeg).multiplyScalar(1.006));
+      const radius = renderedRasters ? terrainRadius(sampleTerrainHeightKm(renderedRasters, marker.latDeg, marker.lonEastDeg)) + 0.006 : 1.006;
+      const world = group.localToWorld(moonVector(marker.latDeg, marker.lonEastDeg).multiplyScalar(radius));
       const normal = world.clone().normalize();
       const facing = normal.dot(camera.position.clone().sub(world).normalize()) > 0.025;
       const projected = world.project(camera);
@@ -219,7 +266,12 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
         callbacks.reticle(reticle.latDeg, reticle.lonEastDeg);
       }
     }
-    if (textureReady && !reportedReady) { reportedReady = true; callbacks.ready(); }
+    if (textureReady && !reportedReady) {
+      reportedReady = true; callbacks.ready();
+      // The textured frame is already visible before any terrain pixel work.
+      void yieldForMoonTerrain().then(() => { if (!disposed) beginRelief(); });
+    }
+    if (pendingRelief) { const status = pendingRelief; pendingRelief = undefined; callbacks.relief?.(status); }
     if (allowRotation()) request();
   }
   const resize = () => {
@@ -230,9 +282,33 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
     camera.updateProjectionMatrix();
     request();
   };
-  const loadDetail = () => {
-    uniforms.detail.value = options.detail && polarReady ? 1 : 0;
-    if (!options.detail || detailRequested) return;
+  const upgradeTerrain = async () => {
+    if (!terrainRasters || disposed) return;
+    const version = ++buildVersion;
+    const rasters: TerrainRasters = { global: terrainRasters.global, ...(southRaster ? { south: southRaster } : {}) };
+    const lowMemory = (navigator.hardwareConcurrency || 4) <= 4;
+    const widthSegments = software ? 128 : lowMemory ? 192 : 256;
+    try {
+      const upgraded = await buildDisplacedMoonGeometry({ rasters, widthSegments, heightSegments: widthSegments / 2, cancelled: () => disposed || version !== buildVersion });
+      if (!upgraded) return;
+      if (disposed || version !== buildVersion) { upgraded.dispose(); return; }
+      const previous = geometry;
+      geometry = upgraded;
+      mesh.geometry = geometry;
+      renderedRasters = rasters;
+      uniforms.relief.value = 1;
+      uniforms.polarReady.value = rasters.south ? 1 : 0;
+      uniforms.detail.value = options.detail ? 1 : 0;
+      previous.dispose();
+      pendingRelief = rasters.south ? 'ready' : southFailed ? 'partial' : 'global';
+      request();
+    } catch {
+      if (!disposed) callbacks.relief?.(renderedRasters ? 'partial' : 'unavailable');
+    }
+  };
+  const loadDetail = (force = false) => {
+    uniforms.detail.value = options.detail ? 1 : 0;
+    if ((!force && !options.detail) || detailRequested) return;
     detailRequested = true;
     callbacks.detail('loading');
     polarTexture = new THREE.TextureLoader().load('/assets/lunar/ldem_south_pole_1k.png', texture => {
@@ -240,17 +316,24 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
       texture.flipY = false;
       texture.colorSpace = THREE.NoColorSpace;
       texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
       texture.generateMipmaps = false;
       uniforms.polar.value = texture;
       polarReady = true;
-      uniforms.detail.value = options.detail ? 1 : 0;
       callbacks.detail('ready');
+      void readPackedElevationRaster(texture.image as HTMLImageElement, { cancelled: () => disposed }).then(raster => {
+        if (!raster || disposed) return;
+        southRaster = raster;
+        return upgradeTerrain();
+      }).catch(() => { if (!disposed) { southFailed = true; if (renderedRasters) callbacks.relief?.('partial'); } });
       request();
-    }, undefined, () => { if (!disposed) callbacks.detail('unavailable'); });
+    }, undefined, () => {
+      if (!disposed) { southFailed = true; callbacks.detail('unavailable'); if (renderedRasters) callbacks.relief?.('partial'); }
+    });
   };
-  const loadTopography = () => {
+  const loadTopography = (force = false) => {
     uniforms.topography.value = options.topography && elevationReady ? 1 : 0;
-    if (!options.topography || topographyRequested) return;
+    if ((!force && !options.topography) || topographyRequested) return;
     topographyRequested = true;
     callbacks.topography('loading');
     elevationTexture = new THREE.TextureLoader().load('/assets/lunar/ldem_global_2k.png', texture => {
@@ -265,8 +348,20 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
       elevationReady = true;
       uniforms.topography.value = options.topography ? 1 : 0;
       callbacks.topography('ready');
+      void readPackedElevationRaster(texture.image as HTMLImageElement, { cancelled: () => disposed }).then(raster => {
+        if (!raster || disposed) return;
+        terrainRasters = { global: raster };
+        return upgradeTerrain();
+      }).catch(() => { if (!disposed) callbacks.relief?.('unavailable'); });
       request();
-    }, undefined, () => { if (!disposed) callbacks.topography('unavailable'); });
+    }, undefined, () => { if (!disposed) { callbacks.topography('unavailable'); callbacks.relief?.('unavailable'); } });
+  };
+  const beginRelief = () => {
+    if (reliefStarted || disposed) return;
+    reliefStarted = true;
+    callbacks.relief?.('loading');
+    loadTopography(true);
+    loadDetail(true);
   };
   mainTexture = new THREE.TextureLoader().load('/assets/lunar/lroc_color_2k.jpg', texture => {
     if (disposed) { texture.dispose(); return; }
@@ -328,6 +423,8 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
     controls.removeEventListener('change', change);
     controls.removeEventListener('start', pause);
     controls.dispose();
+    ++buildVersion;
+    renderedRasters = undefined; terrainRasters = undefined; southRaster = undefined;
     geometry.dispose();
     material.dispose();
     mainTexture?.dispose();
@@ -368,7 +465,7 @@ export function createMoonRuntime(mount: HTMLElement, initial: MoonRuntimeOption
       if (disposed) return;
       pause();
       if (preset === 'south') camera.position.set(-0.12, -2.3, 0.18);
-      else camera.position.set(-3.75, 0.55, 0.32);
+      else camera.position.set(-4.15, 0.6, 0.35);
       controls.target.set(0, 0, 0);
       controls.update(); request();
     },

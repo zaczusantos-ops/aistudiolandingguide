@@ -44,7 +44,7 @@ cloud desktop browser was unavailable; it was not used for these checks.
 
 The browser checks verified textured first render, actual surface picking,
 independent location/time changes and comparison, a rendered LOLA elevation
-palette loaded only on request, no page-level horizontal overflow at 320, 390,
+palette, no page-level horizontal overflow at 320, 390,
 768 and 1280 CSS pixels, and basic enlarged-text reflow. Simulated WebGL context
 loss restored the photographic poster and preserved native controls. A second
 browser with WebGL disabled and reduced motion also completed native selection
@@ -64,6 +64,31 @@ retain a visible lunar reference. Both the poster and 3D lighting are illustrati
 The native HTTP Preview smoke checker starts with no credentials or cookies,
 accepts only the share session's cookie, and verifies application asset hashes
 against the local build. It preserves inherited proxy and TLS configuration.
+
+### Relief restoration for visual comparison
+
+The user preferred comparing versions before changing the interface again.
+The guide composition is therefore unchanged in this follow-up. Display relief
+has been recovered using the same bundled global and south-polar LOLA maps,
+native projection, displaced picking surface, original height exaggeration,
+terrain normals, rough material, and stronger directional contrast. It remains
+display-only: neither the DEM nor the presentation light affects Sun/Earth angles.
+
+Enhancement starts after the first textured frame. Pixels are read in 64-row
+stripes, and mesh/index/normal work yields in short chunks. Adaptive geometry
+retains a smaller displaced mesh on software rendering. The existing visible
+level remains available if a higher-detail resource or build fails.
+
+The installed sandboxed Chromium/SwiftShader check observed both global and
+polar displaced relief reaching `ready`, unchanged scientific values across
+the upgrade, successful surface picking, context-loss fallback, native keyboard
+navigation and the same four responsive widths. The HTTP smoke verified all
+21 application assets against the local build in an anonymous session.
+
+Eight additional synthetic-fixture tests exercise displacement, registration,
+actual raycasting, stripe reads, yielding and cancellation. These validate the
+mechanism, not the scientific provenance of the display PNGs. The frontend suite
+now has 52 passing tests; the infrastructure suite has 14 passing tests.
 
 ## Checks required in a real browser
 
