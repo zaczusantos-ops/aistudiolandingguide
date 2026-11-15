@@ -170,6 +170,9 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: /Landing\s*Guide\./i })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '3D view status' })).toHaveTextContent(
+      '3D view unavailable. Choose a location from the list to keep exploring.',
+    );
     expect(screen.queryByRole('button', { name: /How it works/i })).not.toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: /Eternal peaks beside pitch-black craters\./i })).toBeInTheDocument();
@@ -213,7 +216,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     // Drop custom unvisited landing coordinates via SelectionPopover
     fireEvent.click(screen.getByRole('button', { name: /Sites \(1\)/i }));
     fireEvent.click(screen.getByRole('button', { name: /Tycho Crater/i }));
-    expect(screen.getByRole('status')).toHaveTextContent(/Custom \(43\.30°S, 348\.8°E\)/i);
+    expect(screen.getByText(/Unvisited pin dropped at Custom \(43\.30°S, 348\.8°E\)/i)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/Custom latitude degrees/i), { target: { value: '-83.4' } });
     fireEvent.change(screen.getByLabelText(/Custom East longitude degrees/i), { target: { value: '42.5' } });

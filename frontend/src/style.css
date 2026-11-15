@@ -129,6 +129,20 @@ button {
   touch-action: none;
 }
 
+.viewport-status {
+  position: absolute;
+  top: 5rem;
+  left: 1rem;
+  z-index: 4;
+  max-width: min(26rem, calc(100% - 2rem));
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.88);
+  color: #c7c7cf;
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
 .lunar-hud-overlay.overlay-passthrough {
   pointer-events: none;
 }

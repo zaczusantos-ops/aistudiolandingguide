@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LandingSiteEntry } from '../navigator/types';
+import { bodyDirectionAt, ExplorerSite } from '../explorer/geometry';
 import {
   buildLunarAtlasData,
   clamp,
@@ -12,14 +13,12 @@ import {
   LunarAtlasData,
   MAX_ELEV_KM,
   MIN_ELEV_KM,
-  normalizeLon,
   POLAR_CAP_OUTER_SPAN,
   sampleAtlasElevationKmBilinear,
   sphereUnitToLatLon,
   SurfaceMode,
 } from './lunarTerrainEngine';
 import {
-  EvaluatedSlotEntry,
   SelectionMode,
   SLOT_LABELS,
   SLOT_META,
@@ -31,11 +30,12 @@ interface LunarViewportProps {
   mode: ViewportMode;
   surfaceMode: SurfaceMode;
   sites: LandingSiteEntry[];
-  entries: EvaluatedSlotEntry[];
+  entries: { label: SlotLabel; site: ExplorerSite }[];
   activeSlotIdx: number;
   onSelectActiveSlot: (index: number) => void;
   epochIdx: number;
   hasStarted: boolean;
+  showSkyMarkers?: boolean;
   selectionMode: SelectionMode;
   onSelectSiteDirect: (siteId: string, slotIdx: number) => void;
   onOutsidePolarCoverage: (
@@ -176,6 +176,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
   onSelectActiveSlot,
   epochIdx,
   hasStarted,
+  showSkyMarkers = true,
   selectionMode,
   onSelectSiteDirect,
   onOutsidePolarCoverage,
@@ -200,17 +201,18 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     h: 720,
   });
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
+  const [renderStatus, setRenderStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [atlasStatus, setAtlasStatus] = useState<'loading' | 'nasa' | 'fallback'>('loading');
 
   const primarySite = (entries[activeSlotIdx] ?? entries[0]).site;
   const activeEntry = entries[activeSlotIdx] ?? entries[0];
 
-  const subSolarLonDeg = normalizeLon(
-    primarySite.center.longitude_east_deg + (primarySite.sky_series.sun_az_deg[epochIdx] ?? 0),
-  );
-  const subEarthLonDeg = normalizeLon(
-    primarySite.center.longitude_east_deg + (primarySite.sky_series.earth_az_deg[epochIdx] ?? 0),
-  );
-  const subSolarLatDeg = clamp((primarySite.sky_series.sun_el_deg[epochIdx] ?? 0) * 0.45, -2.5, 2.5);
+  const sunDirection = bodyDirectionAt(primarySite, epochIdx, 'sun');
+  const earthDirection = bodyDirectionAt(primarySite, epochIdx, 'earth');
+  const subSolarLonDeg = sunDirection.lonEastDeg;
+  const subSolarLatDeg = sunDirection.latDeg;
+  const subEarthLonDeg = earthDirection.lonEastDeg;
+  const subEarthLatDeg = earthDirection.latDeg;
 
   const propsRef = useRef({
     mode,
@@ -223,6 +225,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     subSolarLonDeg,
     subSolarLatDeg,
     subEarthLonDeg,
+    subEarthLatDeg,
     onSelectSiteDirect,
     onOutsidePolarCoverage,
     onReticleChange,
@@ -238,6 +241,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     subSolarLonDeg,
     subSolarLatDeg,
     subEarthLonDeg,
+    subEarthLatDeg,
     onSelectSiteDirect,
     onOutsidePolarCoverage,
     onReticleChange,
@@ -262,8 +266,13 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
       }
     };
     updateSize();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateSize) : null;
+    observer?.observe(el);
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
 
   // Mount Three.js 3D Moon WebGL scene ONCE, start with instant baseline, then swap in real NASA 2K + LOLA polar DEM
@@ -272,16 +281,27 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     if (!mountEl) return undefined;
 
     const { supported, isSoftwareGl } = detectSoftwareWebGL();
-    if (!supported) return undefined;
+    if (!supported) {
+      setRenderStatus('unavailable');
+      return undefined;
+    }
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
     const initW = mountEl.clientWidth || window.innerWidth || 1280;
     const initH = mountEl.clientHeight || window.innerHeight || 720;
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: !isSoftwareGl,
-      powerPreference: 'high-performance',
-      alpha: false,
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: !isSoftwareGl,
+        powerPreference: 'high-performance',
+        alpha: false,
+      });
+    } catch {
+      setRenderStatus('unavailable');
+      return undefined;
+    }
+    setRenderStatus('ready');
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.06;
@@ -306,7 +326,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     const camera = new THREE.PerspectiveCamera(34, initW / Math.max(1, initH), 0.1, 100);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = !isSoftwareGl;
+    controls.enableDamping = !isSoftwareGl && !reduceMotion;
     controls.dampingFactor = 0.07;
     controls.enablePan = false;
     controls.enableZoom = propsRef.current.hasStarted;
@@ -849,7 +869,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
       );
 
       if (sunMarkerRef.current) {
-        const sU = latLonToSphereUnit(-73.5, p.subSolarLonDeg);
+        const sU = latLonToSphereUnit(p.subSolarLatDeg, p.subSolarLonDeg);
         const sunProj = projectWorldToOverlay(
           _scratchV1.set(sU.x * 1.04, sU.y * 1.04, sU.z * 1.04),
           w,
@@ -880,7 +900,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
       }
 
       if (earthMarkerRef.current) {
-        const eU = latLonToSphereUnit(-73.5, p.subEarthLonDeg);
+        const eU = latLonToSphereUnit(p.subEarthLatDeg, p.subEarthLonDeg);
         const earthProj = projectWorldToOverlay(
           _scratchV1.set(eU.x * 1.04, eU.y * 1.04, eU.z * 1.04),
           w,
@@ -1003,6 +1023,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     loadRealNasaLunarAtlas()
       .then((realAtlas) => {
         if (disposed) return;
+        setAtlasStatus('nasa');
         activeAtlas = realAtlas;
         applyVertexDisplacement(realAtlas);
 
@@ -1053,7 +1074,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
         requestRender();
       })
       .catch(() => {
-        // Fallback atlas remains cleanly active if offline / JSDOM test environment
+        if (!disposed) setAtlasStatus('fallback');
       });
 
     const onControlsStart = () => {
@@ -1105,6 +1126,8 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
       requestRender();
     };
     window.addEventListener('resize', onResize);
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onResize) : null;
+    resizeObserver?.observe(mountEl);
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
@@ -1113,8 +1136,8 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     threeCtrlRef.current = {
       requestRender,
       beginCameraTransition: (started: boolean) => {
-        setTargetLayout(started, isSoftwareGl);
-        transitionActive = !isSoftwareGl;
+        setTargetLayout(started, isSoftwareGl || reduceMotion);
+        transitionActive = !isSoftwareGl && !reduceMotion;
         requestRender();
       },
       flyToSouthPole: () => {
@@ -1124,7 +1147,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
         const narrowScale = aspect < 0.9 ? Math.max(1.0, 0.88 / aspect) : 1.0;
         _targetControlsLook.set(0, 0, 0);
         _targetCamPos.set(-0.18 * narrowScale, 1.76 * narrowScale, 0.18 * narrowScale);
-        if (isSoftwareGl) {
+        if (isSoftwareGl || reduceMotion) {
           camera.position.copy(_targetCamPos);
           controls.target.copy(_targetControlsLook);
           controls.update();
@@ -1141,7 +1164,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
         const narrowScale = aspect < 0.9 ? Math.max(1.0, 0.88 / aspect) : 1.0;
         _targetControlsLook.set(0, 0, 0);
         _targetCamPos.set(-1.15 * narrowScale, 3.85 * narrowScale, 2.2 * narrowScale);
-        if (isSoftwareGl) {
+        if (isSoftwareGl || reduceMotion) {
           camera.position.copy(_targetCamPos);
           controls.target.copy(_targetControlsLook);
           controls.update();
@@ -1182,6 +1205,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
       window.removeEventListener('resize', onResize);
+      resizeObserver?.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       controls.removeEventListener('start', onControlsStart);
@@ -1220,7 +1244,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
     if (mode === '3d') {
       ctrl.requestRender();
     }
-  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, viewportSize.w, viewportSize.h]);
+  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, viewportSize.w, viewportSize.h]);
 
   const svgW = viewportSize.w;
   const svgH = viewportSize.h;
@@ -1274,6 +1298,15 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
         }`}
         aria-hidden={mode !== '3d'}
       />
+      <p className="viewport-status" role="status" aria-label="3D view status">
+        {renderStatus === 'unavailable'
+          ? '3D view unavailable. Choose a location from the list to keep exploring.'
+          : atlasStatus === 'nasa'
+            ? 'NASA imagery · relief is visual only'
+            : atlasStatus === 'fallback'
+              ? 'Illustrative fallback surface · NASA imagery could not load'
+              : 'Loading NASA imagery · temporary illustrative surface'}
+      </p>
 
       {mode === '3d' && (
         <svg
@@ -1284,7 +1317,7 @@ export const LunarViewport: React.FC<LunarViewportProps> = ({
           role="img"
           aria-label={`3D Moon site markers for ${entries.map((e) => `${e.label}: ${e.site.name}`).join(', ')}`}
         >
-          {hasStarted && (
+          {hasStarted && showSkyMarkers && (
             <g pointerEvents="none" opacity={0.85}>
               <g ref={sunMarkerRef} visibility="hidden">
                 <line stroke="#ffffff" strokeWidth={1.2} strokeDasharray="4 3" />
