@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { resetMoonOrientation, rotateMoonOnOwnAxes } from './ownAxisRotation';
@@ -6,6 +6,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LandingSiteEntry } from '../navigator/types';
 import { bodyDirectionAt, ExplorerSite } from '../explorer/geometry';
+import { OrbitalSkyMarkers } from './OrbitalSkyMarkers';
+import { layoutOrbitalDirections, OrbitalDirectionPlacement, ScreenRect } from './orbitalDirections';
 import {
   buildLunarAtlasData,
   clamp,
@@ -31,12 +33,14 @@ export interface OriginalLunarViewportProps {
   mode: ViewportMode;
   surfaceMode: SurfaceMode;
   sites: LandingSiteEntry[];
-  entries: { label: SlotLabel; site: ExplorerSite }[];
+  entries: { label: SlotLabel; site: ExplorerSite; observer?: { latDeg: number; lonEastDeg: number } }[];
   activeSlotIdx: number;
   onSelectActiveSlot: (index: number) => void;
   epochIdx: number;
   hasStarted: boolean;
   showSkyMarkers?: boolean;
+  currentUtc?: string;
+  overlayLayoutKey?: string;
   selectionMode: SelectionMode;
   onSelectSiteDirect: (siteId: string, slotIdx: number) => void;
   onOutsidePolarCoverage: (
@@ -67,6 +71,82 @@ const CALLOUT_OFFSETS: Record<SlotLabel, { dx: number; dy: number }> = {
   C: { dx: 34, dy: 26 },
   D: { dx: -34, dy: 26 },
 };
+
+/** Visual silhouette bounds for label placement only; not a terrain/sky test. */
+function projectedMoonBounds(group: THREE.Object3D, camera: THREE.PerspectiveCamera, width: number, height: number): ScreenRect | undefined {
+  const center = group.getWorldPosition(new THREE.Vector3()).applyMatrix4(camera.matrixWorldInverse);
+  const scale = group.getWorldScale(new THREE.Vector3());
+  const radius = 1.05 * Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z));
+  const depth = -center.z;
+  const denominator = depth * depth - radius * radius;
+  if (denominator <= 0) return { x: 0, y: 0, width, height };
+  const extent = (coordinate: number, focal: number, offset: number) => {
+    const delta = radius * Math.sqrt(depth * depth + coordinate * coordinate - radius * radius);
+    return [(coordinate * depth - delta) / denominator * focal - offset,
+      (coordinate * depth + delta) / denominator * focal - offset];
+  };
+  const matrix = camera.projectionMatrix.elements;
+  const [left, right] = extent(center.x, matrix[0], matrix[8]);
+  const [bottom, top] = extent(center.y, matrix[5], matrix[9]);
+  const rect = { x: (left + 1) * width / 2, y: (1 - top) * height / 2,
+    width: (right - left) * width / 2, height: (top - bottom) * height / 2 };
+  return Object.values(rect).every(Number.isFinite) ? rect : undefined;
+}
+
+function applyOrbitalMarker(group: SVGGElement | null, placement: OrbitalDirectionPlacement, observerView: string, utc: string) {
+  if (!group) return;
+  group.dataset.placement = placement.status;
+  group.dataset.offscreen = String(placement.offscreen);
+  group.dataset.directionState = placement.directionState;
+  group.dataset.observerView = observerView;
+  group.dataset.renderedUtc = utc;
+  group.dataset.layout = placement.layout;
+  if (!placement.marker || !placement.labelPosition) {
+    group.setAttribute('visibility', 'hidden');
+    for (const key of ['markerX', 'markerY', 'tipX', 'tipY']) delete group.dataset[key];
+    return;
+  }
+  group.setAttribute('visibility', 'visible');
+  group.dataset.markerX = String(placement.marker.x);
+  group.dataset.markerY = String(placement.marker.y);
+  const marker = group.querySelector('.direction-marker');
+  marker?.setAttribute('transform', `translate(${placement.marker.x}, ${placement.marker.y})`);
+  const setLine = (selector: string, start: { x: number; y: number } | null, end: { x: number; y: number } | null) => {
+    const line = group.querySelector(selector);
+    if (!line) return;
+    line.setAttribute('visibility', start && end ? 'visible' : 'hidden');
+    if (start && end) {
+      line.setAttribute('x1', String(start.x)); line.setAttribute('y1', String(start.y));
+      line.setAttribute('x2', String(end.x)); line.setAttribute('y2', String(end.y));
+    }
+  };
+  setLine('.direction-line', placement.lineStart, placement.directionTip);
+  setLine('.direction-leader', placement.leaderStart, placement.marker);
+  if (placement.directionTip) {
+    group.dataset.tipX = String(placement.directionTip.x);
+    group.dataset.tipY = String(placement.directionTip.y);
+  } else { delete group.dataset.tipX; delete group.dataset.tipY; }
+  const label = group.querySelector('.direction-label');
+  label?.setAttribute('x', String(placement.labelPosition.x));
+  label?.setAttribute('y', String(placement.labelPosition.y));
+  label?.setAttribute('text-anchor', placement.labelAnchor);
+  const note = group.querySelector('.direction-view-note');
+  note?.setAttribute('x', String(placement.labelPosition.x));
+  if (note) note.textContent = placement.status === 'head-on'
+    ? placement.facingViewer ? 'Toward viewer' : 'Away from viewer'
+    : placement.offscreen ? placement.directionState === 'behind-camera' ? 'Behind camera' : 'Beyond view'
+      : observerView === 'far-side' ? 'Point behind Moon' : observerView !== 'visible' ? 'Point outside view' : '';
+  const arrow = group.querySelector('.direction-edge-arrow');
+  arrow?.setAttribute('visibility', placement.arrowRotationDeg !== null ? 'visible' : 'hidden');
+  if (placement.arrowRotationDeg !== null) arrow?.setAttribute('transform', `rotate(${placement.arrowRotationDeg})`);
+  const description = group.querySelector('.direction-view-description');
+  if (description) description.textContent = `${placement.status === 'head-on'
+    ? `The direction points ${placement.facingViewer ? 'toward' : 'away from'} the viewer.`
+    : placement.offscreen ? 'The arrow is a camera offscreen-direction hint.' : 'The direction is in the camera field.'} ${placement.lineStart
+    ? 'The connection starts at the selected point.' : placement.status === 'head-on'
+      ? 'No screen-bearing line or arrow is drawn for this camera alignment.'
+      : 'The selected point is outside the visible side of this camera view; its connection is omitted.'} These are camera-layout states, not local illumination or communication results.`;
+}
 
 function detectSoftwareWebGL(): { supported: boolean; isSoftwareGl: boolean } {
   if (typeof document === 'undefined') return { supported: false, isSoftwareGl: true };
@@ -178,6 +258,8 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
   epochIdx,
   hasStarted,
   showSkyMarkers = true,
+  currentUtc = '',
+  overlayLayoutKey = '',
   selectionMode,
   onSelectSiteDirect,
   onOutsidePolarCoverage,
@@ -196,6 +278,9 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
   });
   const sunMarkerRef = useRef<SVGGElement | null>(null);
   const earthMarkerRef = useRef<SVGGElement | null>(null);
+  const directionNoteRef = useRef<HTMLParagraphElement | null>(null);
+  const observerViewNoteRef = useRef<HTMLSpanElement | null>(null);
+  const skyClipId = `orbital-viewport-${useId().replace(/:/g, '')}`;
 
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({
     w: 1280,
@@ -227,6 +312,9 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     subSolarLatDeg,
     subEarthLonDeg,
     subEarthLatDeg,
+    currentUtc,
+    overlayLayoutKey,
+    showSkyMarkers,
     onSelectSiteDirect,
     onOutsidePolarCoverage,
     onReticleChange,
@@ -243,6 +331,9 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     subSolarLatDeg,
     subEarthLonDeg,
     subEarthLatDeg,
+    currentUtc,
+    overlayLayoutKey,
+    showSkyMarkers,
     onSelectSiteDirect,
     onOutsidePolarCoverage,
     onReticleChange,
@@ -781,13 +872,13 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
           continue;
         }
         const u = latLonToSphereUnit(
-          entry.site.center.latitude_deg,
-          entry.site.center.longitude_east_deg,
+          entry.observer?.latDeg ?? entry.site.center.latitude_deg,
+          entry.observer?.lonEastDeg ?? entry.site.center.longitude_east_deg,
         );
         const r = displacedRadiusAt(
           activeAtlas,
-          entry.site.center.latitude_deg,
-          entry.site.center.longitude_east_deg,
+          entry.observer?.latDeg ?? entry.site.center.latitude_deg,
+          entry.observer?.lonEastDeg ?? entry.site.center.longitude_east_deg,
         );
         _scratchV1.set(u.x * r, u.y * r, u.z * r);
         const proj = projectWorldToOverlay(_scratchV1, w, h);
@@ -865,73 +956,53 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
         }
       }
 
-      const poleUnit = latLonToSphereUnit(-90, 0);
-      const poleProj = projectWorldToOverlay(
-        _scratchV1.set(poleUnit.x * 1.04, poleUnit.y * 1.04, poleUnit.z * 1.04),
-        w,
-        h,
-      );
-
-      if (sunMarkerRef.current) {
-        const sU = latLonToSphereUnit(p.subSolarLatDeg, p.subSolarLonDeg);
-        const sunProj = projectWorldToOverlay(
-          _scratchV1.set(sU.x * 1.04, sU.y * 1.04, sU.z * 1.04),
-          w,
-          h,
-        );
-        if (poleProj.visible && sunProj.visible) {
-          sunMarkerRef.current.setAttribute('visibility', 'visible');
-          const lineEl = sunMarkerRef.current.querySelector('line');
-          const dotEl = sunMarkerRef.current.querySelector('circle');
-          const textEl = sunMarkerRef.current.querySelector('text');
-          if (lineEl) {
-            lineEl.setAttribute('x1', poleProj.x.toFixed(1));
-            lineEl.setAttribute('y1', poleProj.y.toFixed(1));
-            lineEl.setAttribute('x2', sunProj.x.toFixed(1));
-            lineEl.setAttribute('y2', sunProj.y.toFixed(1));
-          }
-          if (dotEl) {
-            dotEl.setAttribute('cx', sunProj.x.toFixed(1));
-            dotEl.setAttribute('cy', sunProj.y.toFixed(1));
-          }
-          if (textEl) {
-            textEl.setAttribute('x', (sunProj.x + 8).toFixed(1));
-            textEl.setAttribute('y', (sunProj.y + 4).toFixed(1));
-          }
-        } else {
-          sunMarkerRef.current.setAttribute('visibility', 'hidden');
+      if (!p.showSkyMarkers) return;
+      const active = p.entries[p.activeSlotIdx] ?? p.entries[0];
+      const observerLat = active.observer?.latDeg ?? active.site.center.latitude_deg;
+      const observerLon = active.observer?.lonEastDeg ?? active.site.center.longitude_east_deg;
+      const observerUnit = latLonToSphereUnit(observerLat, observerLon);
+      // The display radius only seats the annotation on the rendered surface.
+      // It is never a horizon or an obstruction test.
+      const observerRadius = displacedRadiusAt(activeAtlas, observerLat, observerLon);
+      const sunUnit = latLonToSphereUnit(p.subSolarLatDeg, p.subSolarLonDeg);
+      const earthUnit = latLonToSphereUnit(p.subEarthLatDeg, p.subEarthLonDeg);
+      const stageRect = mountEl.getBoundingClientRect();
+      const reservedRects: ScreenRect[] = [];
+      for (const element of document.querySelectorAll<HTMLElement>(
+        '.hud-corner, .hud-top-center, .time-pill, .side-drawer, .popover-card, .ab-floating-dock, .viewport-camera-tools, .viewport-status, .orbital-direction-note',
+      )) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) reservedRects.push({
+          x: rect.left - stageRect.left, y: rect.top - stageRect.top,
+          width: rect.width, height: rect.height + (element === directionNoteRef.current ? 20 : 0),
+        });
+      }
+      const layout = layoutOrbitalDirections({
+        observerLocal: { x: observerUnit.x * observerRadius, y: observerUnit.y * observerRadius, z: observerUnit.z * observerRadius },
+        sunDirectionLocal: sunUnit, earthDirectionLocal: earthUnit,
+        moonMatrixWorld: moonGroup.matrixWorld, camera,
+        viewport: { width: w, height: h }, reservedRects,
+        moonScreenRect: projectedMoonBounds(moonGroup, camera, w, h),
+      });
+      applyOrbitalMarker(sunMarkerRef.current, layout.sun, layout.observer.status, p.currentUtc);
+      applyOrbitalMarker(earthMarkerRef.current, layout.earth, layout.observer.status, p.currentUtc);
+      for (const [group, direction] of [[sunMarkerRef.current, sunUnit], [earthMarkerRef.current, earthUnit]] as const) {
+        if (group) {
+          group.dataset.directionLocal = `${direction.x},${direction.y},${direction.z}`;
+          group.dataset.observerLat = String(observerLat);
+          group.dataset.observerLon = String(observerLon);
         }
       }
-
-      if (earthMarkerRef.current) {
-        const eU = latLonToSphereUnit(p.subEarthLatDeg, p.subEarthLonDeg);
-        const earthProj = projectWorldToOverlay(
-          _scratchV1.set(eU.x * 1.04, eU.y * 1.04, eU.z * 1.04),
-          w,
-          h,
-        );
-        if (poleProj.visible && earthProj.visible) {
-          earthMarkerRef.current.setAttribute('visibility', 'visible');
-          const lineEl = earthMarkerRef.current.querySelector('line');
-          const dotEl = earthMarkerRef.current.querySelector('circle');
-          const textEl = earthMarkerRef.current.querySelector('text');
-          if (lineEl) {
-            lineEl.setAttribute('x1', poleProj.x.toFixed(1));
-            lineEl.setAttribute('y1', poleProj.y.toFixed(1));
-            lineEl.setAttribute('x2', earthProj.x.toFixed(1));
-            lineEl.setAttribute('y2', earthProj.y.toFixed(1));
-          }
-          if (dotEl) {
-            dotEl.setAttribute('cx', earthProj.x.toFixed(1));
-            dotEl.setAttribute('cy', earthProj.y.toFixed(1));
-          }
-          if (textEl) {
-            textEl.setAttribute('x', (earthProj.x + 8).toFixed(1));
-            textEl.setAttribute('y', (earthProj.y + 4).toFixed(1));
-          }
-        } else {
-          earthMarkerRef.current.setAttribute('visibility', 'hidden');
-        }
+      if (directionNoteRef.current) {
+        directionNoteRef.current.dataset.observerView = layout.observer.status;
+        directionNoteRef.current.dataset.renderedUtc = p.currentUtc;
+      }
+      if (observerViewNoteRef.current) {
+        const message = layout.observer.status === 'visible' ? ''
+          : layout.observer.status === 'far-side' ? 'Selected point is behind the Moon in this camera view.'
+            : layout.observer.status === 'unknown' ? 'Direction layout is unavailable.'
+              : 'Selected point is outside this camera view.';
+        if (observerViewNoteRef.current.textContent !== message) observerViewNoteRef.current.textContent = message;
       }
     };
 
@@ -1237,9 +1308,14 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
       },
     };
 
+    const onDisclosureLayout = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest('.side-drawer, .popover-card')) requestRender();
+    };
+    document.addEventListener('toggle', onDisclosureLayout, true);
     requestRender();
 
     return () => {
+      document.removeEventListener('toggle', onDisclosureLayout, true);
       disposed = true;
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
@@ -1272,11 +1348,18 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
   }, []);
 
   const prevStartedRef = useRef(hasStarted);
-  const entrySignature = entries.map((e) => `${e.label}:${e.site.id}`).join('|');
+  const entrySignature = entries.map((e) => `${e.label}:${e.site.id}:${e.observer?.latDeg ?? e.site.center.latitude_deg}:${e.observer?.lonEastDeg ?? e.site.center.longitude_east_deg}`).join('|');
+  const previousSkyContext = useRef('');
 
   useEffect(() => {
     const ctrl = threeCtrlRef.current;
     if (!ctrl) return;
+    const skyContext = `${entrySignature}|${activeSlotIdx}|${epochIdx}|${currentUtc}`;
+    if (previousSkyContext.current !== skyContext) {
+      previousSkyContext.current = skyContext;
+      sunMarkerRef.current?.setAttribute('visibility', 'hidden');
+      earthMarkerRef.current?.setAttribute('visibility', 'hidden');
+    }
     if (prevStartedRef.current !== hasStarted) {
       prevStartedRef.current = hasStarted;
       ctrl.beginCameraTransition(hasStarted);
@@ -1285,7 +1368,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     if (mode === '3d') {
       ctrl.requestRender();
     }
-  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, viewportSize.w, viewportSize.h]);
+  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, currentUtc, overlayLayoutKey, viewportSize.w, viewportSize.h]);
 
   const svgW = viewportSize.w;
   const svgH = viewportSize.h;
@@ -1317,6 +1400,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
   };
 
   const selectedIds = new Set(entries.map((e) => e.site.id));
+  const cataloguedDirection = sites.some(site => site.id === activeEntry.site.id);
 
   return (
     <div
@@ -1349,28 +1433,30 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
               : 'Loading NASA imagery · temporary illustrative surface'}
       </p>
 
+      {hasStarted && showSkyMarkers && mode === '3d' && renderStatus === 'ready' && (
+        <p ref={directionNoteRef} className="orbital-direction-note" data-site={activeEntry.site.id} data-utc={currentUtc} data-basis={cataloguedDirection ? 'catalogue-sky' : 'approximate-sky'}>
+          {cataloguedDirection ? 'Directions only, not local visibility' : 'Approximate directions; local terrain not assessed'} · sizes and distances not to scale.
+          <span ref={observerViewNoteRef} className="orbital-observer-note" />
+        </p>
+      )}
+
       {mode === '3d' && (
         <svg
           className="lunar-hud-overlay overlay-passthrough"
           width={svgW}
           height={svgH}
           viewBox={`0 0 ${svgW} ${svgH}`}
-          role="img"
-          aria-label={`3D Moon site markers for ${entries.map((e) => `${e.label}: ${e.site.name}`).join(', ')}`}
+          role="group"
+          aria-label={`Lunar sites and schematic Sun and Earth directions for ${activeEntry.site.name} at ${currentUtc || 'time unavailable'}`}
         >
           {hasStarted && showSkyMarkers && (
-            <g pointerEvents="none" opacity={0.85}>
-              <g ref={sunMarkerRef} visibility="hidden">
-                <line stroke="#ffffff" strokeWidth={1.2} strokeDasharray="4 3" />
-                <circle r={3.8} fill="#ffffff" stroke="#000000" strokeWidth={1.2} />
-                <text className="vp-vec-sun">Sun</text>
+            <>
+              <defs><clipPath id={skyClipId}><rect x={0} y={0} width={svgW} height={svgH} /></clipPath></defs>
+              <g clipPath={`url(#${skyClipId})`}>
+                <OrbitalSkyMarkers sunRef={sunMarkerRef} earthRef={earthMarkerRef}
+                  siteName={activeEntry.site.name} currentUtc={currentUtc} />
               </g>
-              <g ref={earthMarkerRef} visibility="hidden">
-                <line stroke="#a1a1aa" strokeWidth={1.2} strokeDasharray="2 3" />
-                <circle r={3.8} fill="#a1a1aa" stroke="#000000" strokeWidth={1.2} />
-                <text className="vp-vec-earth">Earth</text>
-              </g>
-            </g>
+            </>
           )}
 
           {hasStarted &&

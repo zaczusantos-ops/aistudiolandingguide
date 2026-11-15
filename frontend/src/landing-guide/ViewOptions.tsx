@@ -32,6 +32,8 @@ export function ViewOptions({ viewportMode, surfaceMode, onChangeViewport, onCha
         </select>
       </label>
       <p className="condition-source-note">Rendered relief is visual context. The selected view does not change the calculation model.</p>
+      <p className="condition-source-note">Sun and Earth symbols show directions, not a view from the ground. Use Conditions for local visibility.</p>
+      <p className="condition-source-note">Orbital Earth illustration: <a href="https://images.nasa.gov/details/GSFC_20171208_Archive_e001788" target="_blank" rel="noreferrer">NASA/NOAA Blue Marble</a>, a static composite image.</p>
     </section>
   );
 }

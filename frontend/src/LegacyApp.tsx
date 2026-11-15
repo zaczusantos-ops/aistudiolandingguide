@@ -253,6 +253,13 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     [entries, dataset, clampedEpochIdx, config],
   );
   const terrainSiteIds = useMemo(() => dataset.sites.map(site => site.id), [dataset.sites]);
+  const viewportEntries = useMemo(() => entries.map(entry => ({
+    label: entry.label,
+    site: entry.site,
+    observer: terrainSiteIds.includes(entry.site.id)
+      ? { latDeg: entry.analysis.terrain.latitudeDeg, lonEastDeg: entry.analysis.terrain.longitudeEastDeg }
+      : { latDeg: entry.site.center.latitude_deg, lonEastDeg: entry.site.center.longitude_east_deg },
+  })), [entries, terrainSiteIds]);
   const activeEntry = entries[safeActiveIdx];
   const activeContext = actionContext(activeEntry.slot, activeEntry.site, config, clampedEpochIdx, startIdx, durationDays);
 
@@ -495,7 +502,9 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
         mode={viewportMode}
         surfaceMode={surfaceMode}
         sites={dataset.sites}
-        entries={entries}
+        entries={viewportEntries}
+        currentUtc={currentUtc}
+        overlayLayoutKey={`${dataOpen}:${chartsOpen}:${activePopover ?? 'none'}`}
         activeSlotIdx={safeActiveIdx}
         onSelectActiveSlot={setActiveSlotIdx}
         epochIdx={clampedEpochIdx}

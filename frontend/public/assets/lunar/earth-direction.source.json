@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "checked_at_utc": "2026-11-15T22:58:03.503500+00:00",
+  "nasa_id": "GSFC_20171208_Archive_e001788",
+  "title": "Eastern Hemisphere - Blue Marble 2012",
+  "local_asset": "earth-direction.jpg",
+  "source_url": "https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e001788/GSFC_20171208_Archive_e001788~small.jpg",
+  "metadata_url": "https://images-api.nasa.gov/search?nasa_id=GSFC_20171208_Archive_e001788",
+  "page_url": "https://images.nasa.gov/details/GSFC_20171208_Archive_e001788",
+  "page_http_status": 200,
+  "source_variant": "NASA Image and Video Library small JPEG, explicitly listed in this exact asset metadata.",
+  "credit": "NASA/NOAA",
+  "credit_evidence": "Exact API description contains: Credit: NASA/NOAA",
+  "creator": "Norman Kuring, NASA Goddard scientist; identified in the API description as compiler of this composite.",
+  "publishing_center": "GSFC",
+  "data_instrument": "Suomi NPP / Visible Infrared Imaging Radiometer Suite (VIIRS)",
+  "composite": {
+    "observation_date": "2012-01-23",
+    "separate_orbits": 6,
+    "viewpoint_description": "10 degrees south by 45 degrees east, approximately 12,742 km above the Earth surface",
+    "evidence": "API description; composite of six separate orbits. This is not one instantaneous photograph."
+  },
+  "archive_metadata_date_created": "2017-12-08T00:00:00Z",
+  "archive_date_note": "The API date_created is the archive record date. It is not the January 2012 observation date described in the item.",
+  "bytes": 65310,
+  "sha256": "20e15a3ed7eff11fa9bb12ea6aa591f908b2e34066650d1219ff2c32258adee2",
+  "format": "JPEG",
+  "dimensions": {
+    "width": 640,
+    "height": 640
+  },
+  "modifications": {
+    "copied_byte_for_byte": true,
+    "reencoded": false,
+    "cropped": false,
+    "color_adjusted": false,
+    "ai_generated": false,
+    "ai_edited": false
+  },
+  "visual_review": {
+    "method": "Source JPEG inspected with view_image before selection.",
+    "finding": "Complete recognizable Earth disk, including Africa, Arabia and the Indian Ocean, with black background and no text/logo. The full disk remains inside the square image."
+  },
+  "intended_use": "Small recognizable Earth direction marker in the existing explorer.",
+  "model_boundary": "Static NASA/NOAA composite illustration. Its phase, clouds, orientation, visible continents and lighting are not calculated for the selected lunar site or UTC. Only the marker position may follow app geometry; this bitmap is not a computed Earth view.",
+  "suggested_source_copy": "Earth image: NASA/NOAA — Blue Marble 2012. Composite illustration, not the selected-date view.",
+  "media_use_guidance": {
+    "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+    "http_status": 200,
+    "note": "NASA guidance for educational/informational use and acknowledgment; no NASA endorsement. Third-party rights, if any, remain separate. The API record does not include a machine-readable license; this JSON does not invent one.",
+    "legacy_policy_link_in_metadata": "http://www.nasa.gov/audience/formedia/features/MP_Photo_Guidelines.html",
+    "policy_statement": "NASA states that its content generally is not subject to copyright in the United States and may be used for educational/informational purposes, including Internet webpages, with acknowledgment and without implied endorsement. The guidance separately protects NASA identifiers and excludes transfer of third-party rights; no blanket worldwide public-domain or machine-readable license is asserted here."
+  },
+  "validation": {
+    "exact_nasa_id_and_title": true,
+    "download_url_listed_in_metadata": true,
+    "budget_at_most_100000_bytes": true,
+    "local_sha256_matches_download": true,
+    "visual_full_disk_black_background": true
+  }
+}
