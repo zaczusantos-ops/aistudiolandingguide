@@ -85,6 +85,26 @@ function compactReading(sun: VisibilityReading, earth: VisibilityReading, geomet
   return `${light} · ${view}`;
 }
 
+// Playback rebuilds readouts every tick, so each free point's full 721 epoch track is reconstructed once.
+const geometrySkyCache = new WeakMap<NavigatorDatasetV1, Map<string, ExplorerSite['sky_series'] | null>>();
+
+function geometrySky(dataset: NavigatorDatasetV1, latDeg: number, lonEastDeg: number): ExplorerSite['sky_series'] | null {
+  let byPoint = geometrySkyCache.get(dataset);
+  if (!byPoint) {
+    byPoint = new Map();
+    geometrySkyCache.set(dataset, byPoint);
+  }
+  const key = `${latDeg},${lonEastDeg}`;
+  if (!byPoint.has(key)) {
+    try {
+      byPoint.set(key, createGeometrySite(dataset, latDeg, lonEastDeg).sky_series);
+    } catch {
+      byPoint.set(key, null);
+    }
+  }
+  return byPoint.get(key) ?? null;
+}
+
 /**
  * Catalogued points use their sampled terrain profile and legacy disk criteria.
  * Free points deliberately bypass the visual atlas and its engineering scaffold:
@@ -98,9 +118,10 @@ export function buildSiteReadout({ dataset, site, terrainHorizonDeg, epochIdx, c
     ? { kind: 'terrain-profile', azimuthDeg: dataset.horizon_azimuths_deg, elevationDeg: terrainHorizonDeg }
     : { kind: 'geometric' };
   if (geometric) {
-    try {
-      sky = createGeometrySite(dataset, site.center.latitude_deg, site.center.longitude_east_deg).sky_series;
-    } catch {
+    const cached = geometrySky(dataset, site.center.latitude_deg, site.center.longitude_east_deg);
+    if (cached) {
+      sky = cached;
+    } else {
       sky = { sun_az_deg: [], sun_el_deg: [], earth_az_deg: [], earth_el_deg: [] };
       horizon = { kind: 'unknown', reason: 'Approximate sky geometry is unavailable.' };
     }

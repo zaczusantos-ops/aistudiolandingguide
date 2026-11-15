@@ -202,7 +202,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     h: 720,
   });
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
-  const [renderStatus, setRenderStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [renderStatus, setRenderStatus] = useState<'loading' | 'ready' | 'unavailable' | 'lost'>('loading');
   const [atlasStatus, setAtlasStatus] = useState<'loading' | 'nasa' | 'fallback'>('loading');
 
   const primarySite = (entries[activeSlotIdx] ?? entries[0]).site;
@@ -302,7 +302,6 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
       setRenderStatus('unavailable');
       return undefined;
     }
-    setRenderStatus('ready');
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.06;
@@ -318,11 +317,15 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
 
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    const envTarget = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
+    const buildEnvironment = () => {
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      const target = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
+      pmremGenerator.dispose();
+      return target;
+    };
+    let envTarget = buildEnvironment();
     scene.environment = envTarget.texture;
     scene.environmentIntensity = 0.06;
-    pmremGenerator.dispose();
 
     const camera = new THREE.PerspectiveCamera(34, initW / Math.max(1, initH), 0.1, 100);
 
@@ -680,6 +683,8 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     setTargetLayout(propsRef.current.hasStarted, true);
 
     let transitionActive = false;
+    let firstFrameDrawn = false;
+    let contextLost = false;
     let lastFrameTime = performance.now();
     let frameId = 0;
     let renderBusy = false;
@@ -970,7 +975,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     };
 
     const requestRender = () => {
-      if (disposed) return;
+      if (disposed || contextLost) return;
       if (propsRef.current.mode !== '3d') return;
       if (renderBusy) {
         renderDirty = true;
@@ -1009,6 +1014,10 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
         }
         applySurfaceAndLighting();
         renderer.render(scene, camera);
+        if (!firstFrameDrawn) {
+          firstFrameDrawn = true;
+          setRenderStatus('ready');
+        }
         syncMarkers();
 
         const done = () => {
@@ -1155,6 +1164,27 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointercancel', onPointerCancel);
 
+    // Three restores its own GL state on restore, so only drawing and the visible fallback are managed here.
+    const onContextLost = (e: Event) => {
+      e.preventDefault();
+      contextLost = true;
+      cancelAnimationFrame(frameId);
+      clearTimeout(frameId);
+      renderBusy = false;
+      setRenderStatus('lost');
+    };
+    const onContextRestored = () => {
+      contextLost = false;
+      firstFrameDrawn = false;
+      // The prefiltered environment lives in a render target whose pixels do not survive the loss.
+      envTarget.dispose();
+      envTarget = buildEnvironment();
+      scene.environment = envTarget.texture;
+      requestRender();
+    };
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
+
     const onResize = () => {
       const w = mountEl.clientWidth || window.innerWidth || 1280;
       const h = mountEl.clientHeight || window.innerHeight || 720;
@@ -1249,6 +1279,8 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
       controls.removeEventListener('start', onControlsStart);
       controls.removeEventListener('change', onControlsChange);
       controls.dispose();
@@ -1285,7 +1317,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
     if (mode === '3d') {
       ctrl.requestRender();
     }
-  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, viewportSize.w, viewportSize.h]);
+  }, [hasStarted, mode, surfaceMode, entrySignature, activeSlotIdx, epochIdx, showSkyMarkers, viewportSize.w, viewportSize.h, renderStatus]);
 
   const svgW = viewportSize.w;
   const svgH = viewportSize.h;
@@ -1317,11 +1349,14 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
   };
 
   const selectedIds = new Set(entries.map((e) => e.site.id));
+  // Markers are projected from the 3D camera, so they must never sit over the poster's different framing.
+  const sceneDrawable = renderStatus !== 'unavailable' && renderStatus !== 'lost';
 
   return (
     <div
       ref={stageRef}
       className="lunar-stage"
+      data-render-status={renderStatus}
       data-viewport-mode={mode}
       data-surface-mode={surfaceMode}
       data-site-a={entries[0]?.site.id ?? ''}
@@ -1334,14 +1369,25 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
       <div
         ref={webglMountRef}
         data-testid="lunar-webgl-canvas"
-        className={`lunar-webgl-mount ${mode === '3d' ? 'is-visible' : 'is-hidden'} ${
+        className={`lunar-webgl-mount ${mode === '3d' && renderStatus !== 'lost' ? 'is-visible' : 'is-hidden'} ${
           selectionMode === 'cursor' && hasStarted ? 'cursor-pick' : 'cursor-grab'
         }`}
         aria-hidden={mode !== '3d'}
       />
+      {(renderStatus === 'unavailable' || renderStatus === 'lost') && mode === '3d' && (
+        <img
+          className={`viewport-poster ${hasStarted ? '' : 'is-hero'}`}
+          src="/assets/lunar/moon-poster.jpg"
+          alt="NASA LRO photographic Moon mosaic. Reference image only: its lighting does not match the chosen date and it cannot be clicked."
+          width={1024}
+          height={1024}
+        />
+      )}
       <p className="viewport-status" role="status" aria-label="3D view status">
         {renderStatus === 'unavailable'
           ? '3D view unavailable. Choose a location from the list to keep exploring.'
+          : renderStatus === 'lost'
+            ? '3D view paused by the graphics driver. Choose a location from the list to keep exploring.'
           : atlasStatus === 'nasa'
             ? 'NASA imagery · relief is visual only'
             : atlasStatus === 'fallback'
@@ -1349,7 +1395,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
               : 'Loading NASA imagery · temporary illustrative surface'}
       </p>
 
-      {mode === '3d' && (
+      {mode === '3d' && sceneDrawable && (
         <svg
           className="lunar-hud-overlay overlay-passthrough"
           width={svgW}
@@ -1519,7 +1565,7 @@ export const OriginalLunarViewport: React.FC<OriginalLunarViewportProps> = ({
         </svg>
       )}
 
-      {hasStarted && mode === '3d' && (
+      {hasStarted && mode === '3d' && sceneDrawable && (
         <div className="viewport-camera-tools" aria-label="Lunar globe camera controls">
           <button
             type="button"
