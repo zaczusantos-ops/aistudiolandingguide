@@ -42,11 +42,44 @@ function disposeTree(root: THREE.Object3D): void {
   textures.forEach((t) => t.dispose());
 }
 
+/** Keep ownership as soon as a resource exists, before initialization can throw. */
+function createCleanupScope() {
+  const steps: Array<() => void> = [];
+  let disposed = false;
+  return {
+    get disposed() { return disposed; },
+    defer(step: () => void) { steps.push(step); },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      while (steps.length) {
+        try {
+          steps.pop()!();
+        } catch {
+          // Attempt every remaining cleanup and preserve the initialization error.
+        }
+      }
+    },
+  };
+}
+
 /**
  * Composes terrain, sky, props and the first-person controller; owns the render loop, resizing,
  * pausing while the tab is hidden, adaptive resolution and disposal.
  */
 export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOptions): ExperienceHandle {
+  const cleanup = createCleanupScope();
+  try {
+    return initializeMoonbaseExperience(mount, opts, cleanup);
+  } catch (error) {
+    cleanup.dispose();
+    throw error;
+  }
+}
+
+function initializeMoonbaseExperience(
+  mount: HTMLElement, opts: ExperienceOptions, cleanup: ReturnType<typeof createCleanupScope>,
+): ExperienceHandle {
   const sizeOf = () => ({
     w: Math.max(1, Math.round(mount.clientWidth || window.innerWidth || 1280)),
     h: Math.max(1, Math.round(mount.clientHeight || window.innerHeight || 720)),
@@ -59,6 +92,9 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
     alpha: false,
     preserveDrawingBuffer: Boolean(opts.debugPose),
   });
+  cleanup.defer(() => renderer.forceContextLoss());
+  cleanup.defer(() => renderer.dispose());
+  cleanup.defer(() => renderer.domElement.remove());
   configureRenderer(renderer, opts.lowPower);
   let basePixelRatio = pickPixelRatio(window.devicePixelRatio, opts.lowPower);
   // Adaptive resolution trades sharpness for frame rate on slow GPUs. Off for a debug pose so
@@ -75,15 +111,19 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
   mount.replaceChildren(canvas);
 
   const scene = new THREE.Scene();
+  cleanup.defer(() => disposeTree(scene));
   const camera = new THREE.PerspectiveCamera(FPV_FOV_DEG, w / h, 0.1, 6000);
 
   const ground = createLunarGround({ seed: opts.seed, lowPower: opts.lowPower, horizonElevDeg: opts.horizonElevDeg });
+  cleanup.defer(() => ground.dispose());
   scene.add(ground.object);
 
   const sky = createLunarSky({ renderer, scene, lowPower: opts.lowPower });
+  cleanup.defer(() => sky.dispose());
   scene.add(sky.object);
 
   const base = createMoonbase({ seed: opts.seed, lowPower: opts.lowPower, heightAt: ground.heightAt });
+  cleanup.defer(() => base.dispose());
   scene.add(base.object);
 
   const controller = createFirstPersonController({
@@ -94,6 +134,7 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
     spawn: opts.debugPose ?? base.spawn,
     frozen: Boolean(opts.debugPose),
   });
+  cleanup.defer(() => controller.dispose());
 
   const dirScratch = new THREE.Vector3();
   const setSky = (sunAz: number, sunEl: number, earthAz: number, earthEl: number) => {
@@ -108,7 +149,6 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
   let elapsed = 0;
   let rafId = 0;
   let running = false;
-  let disposed = false;
   let contextLost = false;
   const frame: FrameContext = { dt: 0, elapsed: 0, camera };
 
@@ -130,7 +170,7 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
   };
 
   const start = () => {
-    if (running || disposed || contextLost) return;
+    if (running || cleanup.disposed || contextLost) return;
     running = true;
     last = performance.now();
     // Time spent hidden or without a context is not a slow frame.
@@ -141,12 +181,14 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
     running = false;
     cancelAnimationFrame(rafId);
   };
+  cleanup.defer(stop);
 
   const onVisibility = () => {
     if (document.hidden) stop();
     else start();
   };
   document.addEventListener('visibilitychange', onVisibility);
+  cleanup.defer(() => document.removeEventListener('visibilitychange', onVisibility));
 
   const onContextLost = (e: Event) => {
     e.preventDefault();
@@ -158,7 +200,9 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
     if (!document.hidden) start();
   };
   canvas.addEventListener('webglcontextlost', onContextLost);
+  cleanup.defer(() => canvas.removeEventListener('webglcontextlost', onContextLost));
   canvas.addEventListener('webglcontextrestored', onContextRestored);
+  cleanup.defer(() => canvas.removeEventListener('webglcontextrestored', onContextRestored));
 
   const applySize = () => {
     const next = sizeOf();
@@ -181,9 +225,11 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
   let resizeObserver: ResizeObserver | null = null;
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(applySize);
+    cleanup.defer(() => resizeObserver?.disconnect());
     resizeObserver.observe(mount);
   } else {
     window.addEventListener('resize', applySize);
+    cleanup.defer(() => window.removeEventListener('resize', applySize));
   }
 
   // Render one frame synchronously so the first paint already shows the scene.
@@ -196,23 +242,6 @@ export function createMoonbaseExperience(mount: HTMLElement, opts: ExperienceOpt
     setMoveVector: (x, y) => controller.setMoveVector(x, y),
     addLook: (dy, dp) => controller.addLook(dy, dp),
     triggerTremor: (i, d) => controller.triggerTremor(i, d),
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-      canvas.removeEventListener('webglcontextlost', onContextLost);
-      canvas.removeEventListener('webglcontextrestored', onContextRestored);
-      if (resizeObserver) resizeObserver.disconnect();
-      else window.removeEventListener('resize', applySize);
-      controller.dispose();
-      base.dispose();
-      sky.dispose();
-      ground.dispose();
-      disposeTree(scene);
-      renderer.dispose();
-      renderer.forceContextLoss();
-      canvas.remove();
-    },
+    dispose: () => cleanup.dispose(),
   };
 }

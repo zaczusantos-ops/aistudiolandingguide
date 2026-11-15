@@ -44,6 +44,7 @@ describe('illustrative walk scientific boundary', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     render(<AstronautViewport entries={[entry]} activeSlotIdx={0} epochIdx={0} />);
     const stage = screen.getByTestId('astronaut-stage');
+    expect(stage).toHaveFocus();
     expect(stage).toHaveAttribute('data-scene-model', 'illustrative-moonbase');
     expect(stage).toHaveAccessibleName(/Terrain, base, lighting and Earth's appearance are illustrative/);
     const note = screen.getByTitle(/Sun is drawn at 10° elevation/);
@@ -52,6 +53,8 @@ describe('illustrative walk scientific boundary', () => {
     expect(note.title).toContain(`Saved Sun elevation at this time: ${site.sky_series.sun_el_deg[0].toFixed(1)}°`);
     expect(experience.create).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent('needs WebGL');
+    expect(screen.queryByRole('group', { name: /tremor/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Nakamura|Lognonné/i })).not.toBeInTheDocument();
   });
 
   it.each(['sun_az_deg', 'sun_el_deg', 'earth_az_deg', 'earth_el_deg'] as const)('does not replace unavailable %s with a fabricated zero direction', key => {

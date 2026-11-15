@@ -38,20 +38,12 @@ function detectWebGL(): { supported: boolean; isSoftwareGl: boolean } {
  */
 export const ILLUSTRATIVE_SUN_ELEVATION_DEG = 10;
 
-/** Same illustrative tremor for both buttons: no magnitude, duration or catalog value is implied. */
-const ILLUSTRATIVE_TREMOR = { intensity: 0.7, durationS: 3 } as const;
-
 /** Maximum look rate of the right virtual stick at full deflection (deg/s). */
 const STICK_YAW_RATE_DEG_S = 130;
 const STICK_PITCH_RATE_DEG_S = 85;
 
 /** Esc presses this soon after a Pointer Lock change only released the lock. */
 const ESC_AFTER_UNLOCK_GRACE_MS = 400;
-
-const QUAKE_PILLS = [
-  { key: 'nakamura', label: 'Nakamura 1979', className: 'fpv-pill fpv-pill-1' },
-  { key: 'lognonne', label: 'Lognonné 2003', className: 'fpv-pill fpv-pill-2' },
-] as const;
 
 function hashString(str: string): number {
   let h = 2166136261;
@@ -67,7 +59,7 @@ type GlState = 'pending' | 'ready' | 'unsupported' | 'failed' | 'unavailable-sky
 /**
  * First-person moonbase walk. The 3D scene lives in ./fpv (terrain, sky, props, controls,
  * experience, loaded on demand); this component mounts it and draws the HTML overlay:
- * two illustrative tremor buttons, twin virtual sticks, the illustrative-lighting note and the
+ * twin virtual sticks, the illustrative-scene note and the
  * way back to Orbit 3D.
  */
 export const AstronautViewport: React.FC<AstronautViewportProps> = ({ entries, activeSlotIdx, epochIdx, onExit }) => {
@@ -83,6 +75,7 @@ export const AstronautViewport: React.FC<AstronautViewportProps> = ({ entries, a
     && [sunAz, earthAz, earthEl, datasetSunEl].every(Number.isFinite)
     && Math.abs(earthEl) <= 90 && Math.abs(datasetSunEl) <= 90;
 
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<ExperienceHandle | null>(null);
   const skyRef = useRef({ sunAz, sunEl, earthAz, earthEl });
@@ -90,6 +83,10 @@ export const AstronautViewport: React.FC<AstronautViewportProps> = ({ entries, a
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const [glState, setGlState] = useState<GlState>('pending');
+
+  useEffect(() => {
+    stageRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const seed = hashString(site.id);
   const horizonElevDeg = analysis.terrain.horizonElevDeg;
@@ -176,6 +173,7 @@ export const AstronautViewport: React.FC<AstronautViewportProps> = ({ entries, a
 
   return (
     <div
+      ref={stageRef}
       className="astronaut-stage"
       data-testid="astronaut-stage"
       data-scene-model="illustrative-moonbase"
@@ -183,6 +181,7 @@ export const AstronautViewport: React.FC<AstronautViewportProps> = ({ entries, a
       data-epoch-idx={epochIdx}
       data-sky-available={skyAvailable ? 'true' : 'false'}
       role="application"
+      tabIndex={-1}
       aria-label={`Illustrative Moon walk for ${site.name}. Terrain, base, lighting and Earth's appearance are illustrative. Click the view to look around with the mouse (Esc releases it) or drag to look; W A S D or the arrow keys walk and turn, Shift runs. Esc returns to Orbit 3D.`}
     >
       <div ref={mountRef} className="astronaut-webgl-mount" />
@@ -196,24 +195,6 @@ export const AstronautViewport: React.FC<AstronautViewportProps> = ({ entries, a
               : 'The first-person view needs WebGL, which is not available in this browser.'}
         </p>
       )}
-
-      <div className="fpv-quake-pills" role="group" aria-label="Illustrative tremor demos, not catalog data">
-        {QUAKE_PILLS.map((pill) => (
-          <button
-            key={pill.key}
-            type="button"
-            className={pill.className}
-            aria-label={`${pill.label}: plays an illustrative camera tremor only, not catalog data`}
-            title="Illustrative camera tremor only, not catalog data"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() =>
-              handleRef.current?.triggerTremor(ILLUSTRATIVE_TREMOR.intensity, ILLUSTRATIVE_TREMOR.durationS)
-            }
-          >
-            {pill.label}
-          </button>
-        ))}
-      </div>
 
       <VirtualJoystick side="left" onChange={(x, y) => handleRef.current?.setMoveVector(x, y)} />
       <VirtualJoystick
