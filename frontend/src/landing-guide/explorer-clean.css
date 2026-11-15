@@ -11,6 +11,13 @@
   text-decoration: underline;
   text-underline-offset: 5px;
 }
+.guide-shell--clean .time-pill-trigger:hover,
+.guide-shell--clean .time-pill-trigger.active {
+  background: transparent;
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
 .guide-shell--clean .viewport-camera-tools { left: 22px; }
 .guide-shell--clean .hud-top-center > .hud-btn { pointer-events: auto; }
 .guide-shell--clean .ab-summary-card { border: 0; background: rgba(0, 0, 0, 0.8); }
@@ -18,12 +25,15 @@
 .clean-view-options {
   top: 76px;
   left: 50%;
+  right: auto;
+  bottom: auto;
+  width: min(340px, calc(100vw - 20px));
   transform: translateX(-50%);
   max-width: min(340px, calc(100vw - 20px));
 }
 .clean-view-options .condition-source-note { color: #c0c0c8; line-height: 1.5; margin: 0; font-size: 0.9375rem; }
 .clean-view-options select { min-height: 44px; }
-.guide-shell--clean :is(.hud-btn, .cam-btn, .ab-add-btn):focus-visible {
+.guide-shell--clean :is(.hud-btn, .cam-btn, .ab-add-btn, .time-pill-trigger, .time-pill-play):focus-visible {
   outline: 2px solid #fff;
   outline-offset: 3px;
 }
