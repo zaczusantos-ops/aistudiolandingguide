@@ -1,0 +1,680 @@
+.lunar-app {
+  --lunar-bg: #000;
+  --lunar-text: #f2f2f4;
+  --lunar-muted: #b4b8c2;
+  --lunar-line: #747986;
+  --lunar-focus: #a8dcff;
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: clip;
+  background: var(--lunar-bg);
+  color: var(--lunar-text);
+  font-family: 'Jost', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.55;
+  color-scheme: dark;
+}
+
+.lunar-app *,
+.lunar-app *::before,
+.lunar-app *::after {
+  box-sizing: border-box;
+}
+
+.lunar-app :is(h1, h2, h3, p, figure) {
+  margin: 0;
+}
+
+.lunar-app button,
+.lunar-app input,
+.lunar-app select,
+.lunar-app summary {
+  font: inherit;
+  color: inherit;
+}
+
+.lunar-app :is(button, a, input, select, summary):focus-visible {
+  outline: 3px solid var(--lunar-focus);
+  outline-offset: 5px;
+}
+
+.lunar-app button {
+  cursor: pointer;
+}
+
+.lunar-app button:disabled {
+  color: #9298a5;
+  cursor: default;
+}
+
+.lunar-app .minimal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1720px;
+  min-height: 96px;
+  padding: 18px clamp(20px, 4vw, 76px);
+  margin: 0 auto;
+}
+
+.lunar-app .wordmark {
+  color: var(--lunar-text);
+  font-size: 18px;
+  font-weight: 400;
+  text-decoration: none;
+  letter-spacing: .015em;
+}
+
+.lunar-app .wordmark small,
+.lunar-app .wordmark span {
+  color: var(--lunar-muted);
+  font-size: .86em;
+  font-weight: 400;
+}
+
+.lunar-app .top-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.lunar-app .text-action,
+.lunar-app .top-links a,
+.lunar-app .top-links button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  max-width: 100%;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--lunar-text);
+  text-decoration: none;
+  text-underline-offset: 6px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.lunar-app :is(.text-action, .top-links a, .top-links button):hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.lunar-app .explore-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(310px, 1fr);
+  align-items: start;
+  gap: clamp(24px, 4vw, 70px);
+  width: 100%;
+  max-width: 1600px;
+  min-height: calc(100dvh - 96px);
+  margin: 0 auto;
+  padding: 10px clamp(20px, 4vw, 76px) 40px;
+}
+
+.lunar-app .moon-column,
+.lunar-app .guide-column {
+  min-width: 0;
+}
+
+.lunar-app .moon-column {
+  padding-top: 0;
+}
+
+.lunar-app .moon-frame {
+  position: relative;
+  width: 100%;
+  height: clamp(440px, calc(100dvh - 220px), 820px);
+  min-height: 320px;
+  isolation: isolate;
+}
+
+.lunar-app .moon-frame .lunar-stage--embedded {
+  inset: auto;
+  background: transparent;
+}
+
+.lunar-app .moon-frame .viewport-camera-tools {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  gap: 4px 20px;
+  z-index: 8;
+  padding: 0 8px;
+}
+
+.lunar-app .moon-frame .cam-btn {
+  min-width: 44px;
+  min-height: 48px;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--lunar-muted);
+  font-weight: 400;
+  font-size: 16px;
+}
+
+.lunar-app .moon-frame .cam-btn:hover {
+  background: none;
+  color: var(--lunar-text);
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+
+.lunar-app .moon-frame .viewport-status {
+  position: absolute;
+  top: 0;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+  color: var(--lunar-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.lunar-app .moon-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 20px;
+  margin-top: 12px;
+  color: var(--lunar-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.lunar-app .moon-caption .text-action {
+  color: var(--lunar-muted);
+  font-size: inherit;
+}
+
+.lunar-app .topography-key {
+  display: grid;
+  gap: 9px;
+  width: min(100%, 400px);
+  margin: 18px auto 0;
+  color: var(--lunar-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.lunar-app .topography-ramp {
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(to right,
+    #1d1459 0%,
+    #2563eb 20%,
+    #06b6d4 40%,
+    #22c55e 51.4286%,
+    #eab308 65.7143%,
+    #ef4444 82.8571%,
+    #fce7f3 100%);
+}
+
+.lunar-app .topography-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--lunar-text);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lunar-app .topography-key p {
+  color: var(--lunar-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.lunar-app .guide-column {
+  padding: clamp(16px, 4dvh, 52px) 0 24px;
+}
+
+.lunar-app .guide-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 17px;
+  padding: 0;
+  margin: 0 0 34px;
+  list-style: none;
+}
+
+.lunar-app .guide-step,
+.lunar-app .guide-progress button {
+  min-height: 48px;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--lunar-muted);
+  font-size: 15px;
+  font-weight: 400;
+  text-decoration: none;
+  text-underline-offset: 7px;
+}
+
+.lunar-app .guide-step[aria-current='step'],
+.lunar-app .guide-progress button[aria-current='step'] {
+  color: var(--lunar-text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.lunar-app .step-heading {
+  max-width: 15ch;
+  margin: 0 0 18px;
+  font-size: clamp(32px, 3.2vw, 44px);
+  line-height: 1.15;
+  font-weight: 300;
+  letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+}
+
+.lunar-app .step-intro {
+  max-width: 38ch;
+  margin: 0 0 28px;
+  color: var(--lunar-muted);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.lunar-app .field-stack {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 26px;
+}
+
+.lunar-app .field-label {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+  color: var(--lunar-text);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.lunar-app .native-select,
+.lunar-app .field-label select,
+.lunar-app .field-label input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 9px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--lunar-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--lunar-text);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.lunar-app .field-label select option {
+  background: #101216;
+  color: var(--lunar-text);
+}
+
+.lunar-app .field-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 20px;
+  min-width: 0;
+}
+
+.lunar-app .coordinate-fields {
+  max-width: 100%;
+  margin-top: 22px;
+  color: var(--lunar-muted);
+}
+
+.lunar-app .coordinate-fields summary,
+.lunar-app .source-section summary {
+  display: list-item;
+  min-height: 48px;
+  padding: 10px 0;
+  color: var(--lunar-muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.lunar-app .coordinate-fields .field-pair {
+  margin: 12px 0;
+}
+
+.lunar-app .inline-error {
+  margin-top: 12px;
+  color: #ffcebd;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.lunar-app .source-line {
+  margin-top: 22px;
+  color: var(--lunar-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.lunar-app .guide-column > .source-line[aria-label='Current scenario'] {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+
+.lunar-app .step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 30px;
+}
+
+.lunar-app .step-actions > :last-child {
+  margin-left: auto;
+}
+
+.lunar-app .step-actions .text-action {
+  font-size: 18px;
+}
+
+.lunar-app .conditions-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 42px;
+  margin-top: 36px;
+}
+
+.lunar-app .condition-item {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--lunar-muted);
+  font-size: 15px;
+}
+
+.lunar-app .condition-value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--lunar-text);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.lunar-app .condition-state {
+  color: var(--lunar-muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.lunar-app .comparison {
+  margin-top: 38px;
+  padding-top: 6px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.lunar-app .comparison-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-bottom: 16px;
+}
+
+.lunar-app .comparison-head h2,
+.lunar-app .comparison-head h3 {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.lunar-app .comparison-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px 30px;
+  margin-top: 20px;
+}
+
+.lunar-app .source-section {
+  width: 100%;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 8px clamp(20px, 4vw, 76px) 40px;
+  color: var(--lunar-muted);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.lunar-app .source-section :is(p, ul, ol) {
+  max-width: 78ch;
+  margin: 12px 0;
+}
+
+.lunar-app .source-section a {
+  color: var(--lunar-text);
+  text-underline-offset: 4px;
+}
+
+.lunar-app .source-section h2 {
+  margin-bottom: 16px;
+  color: var(--lunar-text);
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.lunar-app .guide-column > .source-section {
+  width: 100%;
+  max-width: none;
+  margin: 20px 0 0;
+  padding: 0;
+}
+
+.lunar-app .skip-link {
+  position: absolute;
+  top: -100px;
+  left: 20px;
+  z-index: 100;
+  min-height: 48px;
+  padding: 12px;
+  background: #fff;
+  color: #000;
+}
+
+.lunar-app .skip-link:focus {
+  top: 16px;
+}
+
+.lunar-app .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (min-width: 1700px) {
+  .lunar-app .explore-main {
+    grid-template-columns: minmax(0, 1.8fr) minmax(340px, 1fr);
+  }
+}
+
+@media (max-width: 1050px) {
+  .lunar-app .minimal-header {
+    min-height: 82px;
+  }
+
+  .lunar-app .explore-main {
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, 1fr);
+    gap: 30px;
+  }
+
+  .lunar-app .guide-progress {
+    gap: 0 15px;
+    margin-bottom: 24px;
+  }
+
+  .lunar-app .moon-frame {
+    height: clamp(400px, 67dvh, 650px);
+  }
+}
+
+@media (max-width: 780px) {
+  .lunar-app .minimal-header {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0 24px;
+    min-height: 78px;
+    padding-top: 12px;
+    padding-bottom: 8px;
+  }
+
+  .lunar-app .wordmark {
+    margin-right: auto;
+  }
+
+  .lunar-app .top-links {
+    gap: 0 18px;
+    font-size: 16px;
+  }
+
+  .lunar-app .explore-main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 26px;
+  }
+
+  .lunar-app .moon-column,
+  .lunar-app .guide-column {
+    width: 100%;
+  }
+
+  .lunar-app .moon-frame {
+    height: clamp(320px, 60vw, 480px);
+    min-height: 320px;
+  }
+
+  .lunar-app .moon-caption {
+    margin-top: 0;
+  }
+
+  .lunar-app .guide-column {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .lunar-app .guide-progress {
+    gap: 0 22px;
+    margin-bottom: 20px;
+  }
+
+  .lunar-app .step-heading {
+    max-width: 22ch;
+    font-size: 34px;
+  }
+
+  .lunar-app .step-intro {
+    max-width: 52ch;
+    margin-bottom: 24px;
+  }
+
+  .lunar-app .conditions-strip {
+    gap: 20px 38px;
+    margin-top: 30px;
+  }
+}
+
+@media (max-width: 390px) {
+  .lunar-app .minimal-header,
+  .lunar-app .explore-main,
+  .lunar-app .source-section {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .lunar-app .top-links {
+    gap: 0 16px;
+  }
+
+  .lunar-app .guide-progress {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px;
+  }
+
+  .lunar-app .guide-step,
+  .lunar-app .guide-progress button {
+    text-align: left;
+  }
+
+  .lunar-app .step-heading {
+    font-size: 31px;
+  }
+
+  .lunar-app .field-pair {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .lunar-app .conditions-strip {
+    gap: 20px 26px;
+  }
+
+  .lunar-app .condition-item {
+    flex-basis: calc(50% - 13px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lunar-app *,
+  .lunar-app *::before,
+  .lunar-app *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .lunar-app .native-select,
+  .lunar-app .field-label input,
+  .lunar-app .field-label select {
+    border-bottom-color: CanvasText;
+  }
+
+  .lunar-app .guide-step[aria-current='step'] {
+    color: Highlight;
+  }
+}

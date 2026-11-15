@@ -1,5 +1,10 @@
 # Development analysis — 15 November 2026
 
+Historical baseline analysis. The guided implementation now supersedes the
+pending-interface status below. See `docs/accessibility/minimal-guide-qa.md`
+for the implemented route and verification evidence. Legacy UI source remains
+in `frontend/src/LegacyApp.tsx`; the published entry uses the geometry-only guide.
+
 Working checkout: `zaczusantos-ops/aistudiolandingguide`, branch
 `feat/minimal-lunar-explorer`. No remote branch, merge, or production deployment
 was created during this analysis.

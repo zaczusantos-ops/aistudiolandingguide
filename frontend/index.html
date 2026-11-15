@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <link rel="preload" as="image" href="/assets/lunar/moon-poster.jpg" fetchpriority="high" />
     <title>Lunar Landing Site Navigator</title>
     <meta
       name="description"
@@ -15,7 +17,7 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><main style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:32px;padding:24px;background:#000;color:#eee;font:18px system-ui"><img src="/assets/lunar/moon-poster.jpg" alt="NASA LRO photographic Moon mosaic" width="1024" height="1024" fetchpriority="high" style="width:min(65vw,600px);height:auto;max-width:100%"><p>Lunar / landing guide<br>Opening the guide…</p></main></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

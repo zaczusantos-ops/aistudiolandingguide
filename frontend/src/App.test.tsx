@@ -26,7 +26,7 @@ import {
   projectBodySkySeries,
 } from './landing-guide/customSiteBuilder';
 import { buildLunarAtlasData } from './landing-guide/lunarTerrainEngine';
-import { App } from './App';
+import { LegacyApp as App } from './LegacyApp';
 
 afterEach(() => {
   cleanup();
@@ -171,7 +171,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
 
     expect(screen.getByRole('heading', { name: /Landing\s*Guide\./i })).toBeInTheDocument();
     expect(screen.getByRole('status', { name: '3D view status' })).toHaveTextContent(
-      '3D view unavailable. Choose a location from the list to keep exploring.',
+      'Static NASA image',
     );
     expect(screen.queryByRole('button', { name: /How it works/i })).not.toBeInTheDocument();
 

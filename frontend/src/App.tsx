@@ -1,669 +1,178 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import rawDataset from './data/south_pole_precomputed.v1.json';
-import { parseNavigatorDataset } from './contract';
-import { DEFAULT_CONFIG, evaluateLiveSite } from './navigator/math';
-import { EngineeringConfig, LandingSiteEntry, NavigatorDatasetV1 } from './navigator/types';
-import { AstronautViewport } from './landing-guide/AstronautViewport';
-import { ChartsDrawer } from './landing-guide/ChartsDrawer';
-import { createCustomLandingSite } from './landing-guide/customSiteBuilder';
-import { DataDrawer } from './landing-guide/DataDrawer';
-import { HomeOverlay } from './landing-guide/HomeOverlay';
-import {
-  buildLunarAtlasData,
-  getLoadedRealAtlasSync,
-  LunarAtlasData,
-  SurfaceMode,
-  TOPO_LEGEND_STOPS,
-} from './landing-guide/lunarTerrainEngine';
-import { LunarViewport } from './landing-guide/LunarViewport';
-import { SelectionPopover } from './landing-guide/SelectionPopover';
-import {
-  addSiteSlot,
-  buildPlainSummary,
-  computeWindowSlice,
-  DurationDays,
-  EvaluatedSlotEntry,
-  evaluateWindowMetrics,
-  formatUtcShort,
-  MAX_SITE_SLOTS,
-  PlaybackSpeed,
-  removeSiteSlot,
-  SelectionMode,
-  setSiteSlotAt,
-  SiteSlotState,
-  SLOT_LABELS,
-  SLOT_META,
-  swapSiteSlots,
-  ViewportMode,
-} from './landing-guide/state';
-import { TimePopover } from './landing-guide/TimePopover';
+import type { NavigatorDatasetV1 } from './navigator/types';
+import { Explanation } from './explorer/Explanation';
+import { formatElevation, getConditions } from './explorer/geometry';
+import { createCustomScenario, createNamedScenario, formatCoordinates, formatUtc, parseUtcInput, type Scenario } from './explorer/scenario';
+import type { SurfaceMode } from './landing-guide/lunarTerrainEngine';
 
-const defaultDataset: NavigatorDatasetV1 = parseNavigatorDataset(rawDataset);
+// The checked-in fixture is validated in contract tests, without compiling
+// Ajv and revalidating 1.4 MB before the first browser render.
+const defaultDataset = rawDataset as NavigatorDatasetV1;
+const LunarViewport = lazy(() => import('./landing-guide/LunarViewport').then(module => ({ default: module.LunarViewport })));
+const STEPS = ['Location', 'Date & time', 'Sunlight & energy', 'Earth & communication'];
+const TITLES = ['Choose a point.', 'Choose the time.', 'Sunlight, then energy.', 'A path to Earth.'];
+const NEXT = ['Continue to date & time', 'Continue to sunlight & energy', 'Continue to Earth & communication'];
+export interface AppProps { dataset?: NavigatorDatasetV1 }
 
-export interface AppProps {
-  dataset?: NavigatorDatasetV1;
+function MoonPoster({ unavailable = false }: { unavailable?: boolean }) {
+  return <div className="moon-poster"><img src="/assets/lunar/moon-poster.jpg" alt="NASA LRO photographic Moon mosaic; reference image with illustrative lighting" width="1024" height="1024" fetchPriority="high" /><p role="status">{unavailable ? '3D view unavailable. Use the location list to keep exploring.' : 'Loading the interactive Moon…'}</p></div>;
+}
+class MoonBoundary extends React.Component<React.PropsWithChildren<{ onUnavailable: () => void }>, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch() { this.props.onUnavailable(); }
+  render() { return this.state.failed ? <MoonPoster unavailable /> : this.props.children; }
 }
 
-function getInitialAutostart(): boolean {
-  if (typeof window === 'undefined') return false;
-  return new URLSearchParams(window.location.search).get('autostart') === '1';
+function TimeEditor({ scenario, dataset, onCommit, comparison = false }: { scenario: Scenario; dataset: NavigatorDatasetV1; onCommit: (epoch: number, continueNext?: boolean) => void; comparison?: boolean }) {
+  const timestamps = dataset.mission_window.timestamps_utc, iso = timestamps[scenario.epochIdx];
+  const [date, setDate] = useState(iso.slice(0, 10));
+  const [hour, setHour] = useState(String(new Date(iso).getUTCHours()));
+  const [error, setError] = useState<string | null>(null);
+  const inputId = React.useId();
+  useEffect(() => { setDate(iso.slice(0, 10)); setHour(String(new Date(iso).getUTCHours())); setError(null); }, [iso]);
+  return <form className="field-stack" id={comparison ? `${inputId}-form` : 'scenario-time-form'} noValidate onSubmit={event => {
+    event.preventDefault(); const result = parseUtcInput(date, hour, timestamps);
+    if (!result.valid) { setError(result.error); return; }
+    setError(null); onCommit(result.epochIdx, (event.nativeEvent as SubmitEvent).submitter?.hasAttribute('data-continue') ?? false);
+  }}>
+    <div className="field-pair">
+      <label className="field-label" htmlFor={`${inputId}-date`}>{comparison ? 'Comparison date (UTC)' : 'Date (UTC)'}
+        <input id={`${inputId}-date`} type="date" value={date} min={timestamps[0].slice(0, 10)} max={timestamps.at(-1)!.slice(0, 10)} aria-invalid={error ? true : undefined} aria-describedby={error ? `${inputId}-error` : undefined} onChange={event => setDate(event.target.value)} />
+      </label>
+      <label className="field-label" htmlFor={`${inputId}-hour`}>{comparison ? 'Comparison hour (UTC)' : 'Hour (UTC)'}
+        <input id={`${inputId}-hour`} type="number" inputMode="numeric" min="0" max="23" step="1" value={hour} aria-invalid={error ? true : undefined} aria-describedby={error ? `${inputId}-error` : undefined} onChange={event => setHour(event.target.value)} />
+      </label>
+    </div>
+    {error && <p className="inline-error" id={`${inputId}-error`} role="alert">{error} The results still show the last valid time.</p>}
+    <button className="text-action" type="submit">{comparison ? 'Use comparison time' : 'Use this time'} <span aria-hidden="true">↗</span></button>
+  </form>;
 }
 
-function detectIsMobile(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  return window.matchMedia('(max-width: 820px)').matches;
+function Conditions({ scenario, compact = false, label }: { scenario: Scenario; compact?: boolean; label?: string }) {
+  const conditions = getConditions(scenario.site, scenario.epochIdx);
+  return <div className={compact ? 'comparison-values' : 'conditions-strip'} role="region" aria-label={label ?? (compact ? 'Comparison Sun and Earth conditions' : 'Sun and Earth conditions')}>
+    {(['sun', 'earth'] as const).map(body => <p className="condition-item" key={body}>
+      <span>{body === 'sun' ? 'Sun center' : 'Earth center'}</span>
+      <span className="condition-value">{formatElevation(conditions[body].elevationDeg)}</span>
+      <span className="condition-state">{conditions[body].position} geometric horizon</span>
+    </p>)}
+  </div>;
 }
 
 export function App({ dataset = defaultDataset }: AppProps) {
-  const [hasStarted, setHasStarted] = useState<boolean>(getInitialAutostart);
-  const [viewportMode, setViewportMode] = useState<ViewportMode>('3d');
-  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('realistic');
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('cursor');
+  const [step, setStep] = useState(0);
+  const [scenarios, setScenarios] = useState<Scenario[]>(() => [createNamedScenario(dataset, dataset.sites[0].id)]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [surface, setSurface] = useState<SurfaceMode>('realistic');
+  const [moonStatus, setMoonStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [rotating, setRotating] = useState(() => !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false));
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [coordinateError, setCoordinateError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const [hasChosen, setHasChosen] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const comparisonHeading = useRef<HTMLHeadingElement>(null);
+  const comparisonLauncher = useRef<HTMLButtonElement>(null);
+  const sources = useRef<HTMLDetailsElement>(null);
+  const previousStep = useRef(step);
+  const safeIndex = Math.min(activeIndex, scenarios.length - 1), current = scenarios[safeIndex];
+  const currentUtc = dataset.mission_window.timestamps_utc[current.epochIdx];
+  const entries = useMemo(() => scenarios.map((scenario, index) => ({ label: index === 0 ? 'A' as const : 'B' as const, site: scenario.site })), [scenarios]);
+  useEffect(() => { document.documentElement.removeAttribute('data-started'); document.body.removeAttribute('data-started'); }, []);
+  useEffect(() => { setLatitude(current.site.center.latitude_deg.toFixed(4)); setLongitude(current.site.center.longitude_east_deg.toFixed(4)); setCoordinateError(null); }, [current.site.id]);
+  useEffect(() => { if (previousStep.current !== step) { previousStep.current = step; if (step > 0) setRotating(false); heading.current?.focus(); } }, [step]);
 
-  const [slots, setSlots] = useState<SiteSlotState[]>(() => [
-    { siteId: dataset.sites[0].id, offsetXNorm: 0, offsetYNorm: 0 },
-  ]);
-  const [customSites, setCustomSites] = useState<Record<string, LandingSiteEntry>>({});
-  const [activeSlotIdx, setActiveSlotIdx] = useState<number>(0);
-
-  const [startIdx, setStartIdx] = useState<number>(0);
-  const [durationDays, setDurationDays] = useState<DurationDays>(30);
-  const [epochIdx, setEpochIdx] = useState<number>(0);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [speed, setSpeed] = useState<PlaybackSpeed>(1);
-  const [config, setConfig] = useState<EngineeringConfig>(DEFAULT_CONFIG);
-
-  const [chartsOpen, setChartsOpen] = useState<boolean>(false);
-  const [dataOpen, setDataOpen] = useState<boolean>(false);
-  const [activePopover, setActivePopover] = useState<'time' | 'selection' | null>(null);
-
-  const [reticleCoords, setReticleCoords] = useState<{ latDeg: number; lonEastDeg: number }>({
-    latDeg: -85,
-    lonEastDeg: 12,
-  });
-  const [coverageNotice, setCoverageNotice] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState<boolean>(detectIsMobile);
-
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.documentElement.dataset.started = hasStarted ? 'true' : 'false';
-      document.body.dataset.started = hasStarted ? 'true' : 'false';
-    }
-  }, [hasStarted]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
-    const mq = window.matchMedia('(max-width: 820px)');
-    const onChange = (ev: MediaQueryListEvent) => setIsMobile(ev.matches);
-    setIsMobile(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
-  useEffect(() => {
-    if (!hasStarted) return undefined;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (activePopover !== null) {
-          setActivePopover(null);
-        } else if (chartsOpen || dataOpen) {
-          setChartsOpen(false);
-          setDataOpen(false);
-        }
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [hasStarted, activePopover, chartsOpen, dataOpen]);
-
-  const safeActiveIdx = Math.max(0, Math.min(slots.length - 1, activeSlotIdx));
-
-  const slice = useMemo(
-    () => computeWindowSlice(dataset.mission_window.timestamps_utc, startIdx, durationDays),
-    [dataset.mission_window.timestamps_utc, startIdx, durationDays],
-  );
-
-  const clampedEpochIdx = Math.max(slice.startIdx, Math.min(slice.endIdx, epochIdx));
-  const currentUtc = dataset.mission_window.timestamps_utc[clampedEpochIdx];
-
-  useEffect(() => {
-    if (!isPlaying) return undefined;
-    const timer = window.setInterval(() => {
-      setEpochIdx((prev) => {
-        const next = prev + speed;
-        return next > slice.endIdx ? slice.startIdx : next;
-      });
-    }, 180);
-    return () => window.clearInterval(timer);
-  }, [isPlaying, speed, slice.startIdx, slice.endIdx]);
-
-  const siteLookup = useMemo(() => {
-    const map = new Map<string, LandingSiteEntry>();
-    for (const s of dataset.sites) map.set(s.id, s);
-    for (const s of Object.values(customSites)) map.set(s.id, s);
-    return map;
-  }, [dataset.sites, customSites]);
-
-  const entries = useMemo<EvaluatedSlotEntry[]>(() => {
-    return slots.map((slot, idx) => {
-      const label = SLOT_LABELS[idx] ?? 'A';
-      const site = siteLookup.get(slot.siteId) ?? dataset.sites[0];
-      const analysis = evaluateLiveSite(
-        site,
-        slot.offsetXNorm,
-        slot.offsetYNorm,
-        dataset.horizon_azimuths_deg,
-        dataset.mission_window,
-        config,
-      );
-      const metrics = evaluateWindowMetrics(analysis, dataset.mission_window, config, slice);
-      return {
-        label,
-        meta: SLOT_META[label],
-        slot,
-        site,
-        analysis,
-        metrics,
-      };
-    });
-  }, [slots, siteLookup, dataset.sites, dataset.horizon_azimuths_deg, dataset.mission_window, config, slice]);
-
-  const plainSummary = useMemo(
-    () =>
-      buildPlainSummary({
-        entries,
-        epochIdx: clampedEpochIdx,
-        currentUtc,
-        slice,
-        relayEnabled: config.relayEnabled,
-      }),
-    [entries, clampedEpochIdx, currentUtc, slice, config.relayEnabled],
-  );
-
-  const handleStart = (siteId?: string) => {
-    if (siteId) {
-      setSlots((prev) => setSiteSlotAt(prev, 0, siteId));
-      setActiveSlotIdx(0);
-    }
-    setHasStarted(true);
-    setDataOpen(false);
-    setChartsOpen(false);
-    setActivePopover(null);
-    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-      window.scrollTo({ top: 0 });
-    }
+  const updateScenario = (index: number, scenario: Scenario) => {
+    setHasChosen(true);
+    setScenarios(previous => previous.map((entry, idx) => idx === index ? scenario : entry));
+    setAnnouncement(`${scenario.site.name}. ${formatUtc(dataset.mission_window.timestamps_utc[scenario.epochIdx])}. ${scenario.origin === 'approximate' ? 'Approximate' : 'Precomputed'} geometry.`);
+  };
+  const chooseNamed = (id: string, index = safeIndex) => { updateScenario(index, createNamedScenario(dataset, id, scenarios[index].epochIdx)); setRotating(false); };
+  const pickCoordinates = (lat: number, lon: number, index = safeIndex) => { updateScenario(index, createCustomScenario(dataset, lat, lon, scenarios[index].epochIdx)); setRotating(false); };
+  const changeTime = (index: number, epochIdx: number) => updateScenario(index, { ...scenarios[index], epochIdx });
+  const showSources = () => {
+    if (sources.current) { sources.current.open = true; sources.current.scrollIntoView({ block: 'start', behavior: 'auto' }); sources.current.querySelector('summary')?.focus(); }
   };
 
-  const handleReturnToBrief = () => {
-    setIsPlaying(false);
-    setDataOpen(false);
-    setChartsOpen(false);
-    setActivePopover(null);
-    setHasStarted(false);
-    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-      window.scrollTo({ top: 0 });
-    }
-  };
-
-  const handleAssignSiteAt = (slotIdx: number, siteId: string) => {
-    setCoverageNotice(null);
-    setSlots((prev) => setSiteSlotAt(prev, slotIdx, siteId));
-  };
-
-  const handleCoordinatePick = (
-    latDeg: number,
-    lonEastDeg: number,
-    slotIdx: number,
-    atlas?: LunarAtlasData,
-  ) => {
-    const effectiveAtlas =
-      atlas ?? getLoadedRealAtlasSync() ?? buildLunarAtlasData(dataset.sites, 256, 128);
-    const customSite = createCustomLandingSite({
-      latDeg,
-      lonEastDeg,
-      atlas: effectiveAtlas,
-      referenceSites: dataset.sites,
-      horizonAzDeg: dataset.horizon_azimuths_deg,
-      missionWindow: dataset.mission_window,
-    });
-    setCustomSites((prev) => ({ ...prev, [customSite.id]: customSite }));
-    setSlots((prev) => setSiteSlotAt(prev, slotIdx, customSite.id));
-    if (latDeg > -78) {
-      setCoverageNotice(
-        `Unvisited pin dropped at ${customSite.name}: 360° horizon ray-marched on global LOLA DEM with SPICE Sun/Earth tracks (polar ELFO relay applies inside 80°S–90°S).`,
-      );
-    } else {
-      setCoverageNotice(null);
-    }
-  };
-
-  const handleAddSlot = () => {
-    setCoverageNotice(null);
-    setSlots((prev) => {
-      const next = addSiteSlot(prev, dataset.sites);
-      if (next.length > prev.length) {
-        setActiveSlotIdx(next.length - 1);
-      }
-      return next;
-    });
-  };
-
-  const handleRemoveSlot = (idx: number) => {
-    setCoverageNotice(null);
-    setSlots((prev) => {
-      const next = removeSiteSlot(prev, idx);
-      setActiveSlotIdx((cur) => Math.max(0, Math.min(next.length - 1, cur >= idx && cur > 0 ? cur - 1 : cur)));
-      return next;
-    });
-  };
-
-  const handleKeepOnlyOne = () => {
-    setCoverageNotice(null);
-    const keep = slots[safeActiveIdx] ?? slots[0];
-    setSlots([keep]);
-    setActiveSlotIdx(0);
-  };
-
-  const handleSwapFirstTwo = () => {
-    setSlots((prev) => swapSiteSlots(prev, 0, 1));
-  };
-
-  const handleCompareWithPsr = () => {
-    const psrSite =
-      dataset.sites.find((s) => s.center.is_psr && s.id !== slots[0].siteId) ??
-      dataset.sites.find((s) => s.id === 'shackleton_psr_floor') ??
-      dataset.sites[dataset.sites.length - 1];
-    const targetId = slots[0].siteId === psrSite.id ? dataset.sites[0].id : psrSite.id;
-    setCoverageNotice(null);
-    setSlots((prev) => {
-      if (prev.length === 1) {
-        return addSiteSlot(prev, dataset.sites, targetId);
-      }
-      return setSiteSlotAt(prev, 1, targetId);
-    });
-    setActiveSlotIdx(1);
-  };
-
-  const handleChangeOffset = (slotIdx: number, xNorm: number, yNorm: number) => {
-    setSlots((prev) =>
-      prev.map((s, idx) => (idx === slotIdx ? { ...s, offsetXNorm: xNorm, offsetYNorm: yNorm } : s)),
-    );
-  };
-
-  const toggleCharts = () => {
-    setChartsOpen((prev) => {
-      const next = !prev;
-      if (next && isMobile) {
-        setDataOpen(false);
-        setActivePopover(null);
-      }
-      return next;
-    });
-  };
-
-  const toggleData = () => {
-    setDataOpen((prev) => {
-      const next = !prev;
-      if (next && isMobile) {
-        setChartsOpen(false);
-        setActivePopover(null);
-      }
-      return next;
-    });
-  };
-
-  const togglePopover = (pop: 'time' | 'selection') => {
-    setActivePopover((prev) => {
-      const next = prev === pop ? null : pop;
-      if (next && isMobile) {
-        setChartsOpen(false);
-        setDataOpen(false);
-      }
-      return next;
-    });
-  };
-
-  const handleResetTime = () => {
-    setIsPlaying(false);
-    setStartIdx(0);
-    setDurationDays(30);
-    setEpochIdx(0);
-  };
-
-  return (
-    <div className="guide-shell" data-started={hasStarted ? 'true' : 'false'}>
-      {/* 3D Orbital Moon Stage (fixed backdrop in Brief Hero, fullscreen in Explorer) */}
-      <LunarViewport
-        mode={viewportMode}
-        surfaceMode={surfaceMode}
-        sites={dataset.sites}
-        entries={entries}
-        activeSlotIdx={safeActiveIdx}
-        onSelectActiveSlot={setActiveSlotIdx}
-        epochIdx={clampedEpochIdx}
-        hasStarted={hasStarted}
-        selectionMode={selectionMode}
-        onSelectSiteDirect={(siteId, slotIdx) => handleAssignSiteAt(slotIdx, siteId)}
-        onOutsidePolarCoverage={handleCoordinatePick}
-        onReticleChange={(latDeg, lonEastDeg) => setReticleCoords({ latDeg, lonEastDeg })}
-        reticleCoords={reticleCoords}
-      />
-
-      {/* 1st-Person Astronaut Surface View */}
-      {hasStarted && viewportMode === 'astronaut' && (
-        <AstronautViewport
-          entries={entries}
-          activeSlotIdx={safeActiveIdx}
-          onSelectActiveSlot={setActiveSlotIdx}
-          surfaceMode={surfaceMode}
-          epochIdx={clampedEpochIdx}
-          config={config}
-          chartsOpen={chartsOpen}
-        />
-      )}
-
-      {!hasStarted && (
-        <HomeOverlay
-          sites={dataset.sites}
-          horizonAzDeg={dataset.horizon_azimuths_deg}
-          missionWindow={dataset.mission_window}
-          onStart={handleStart}
-        />
-      )}
-
-      {hasStarted && (
-        <>
-          {/* Top-Left: Brief & Charts */}
-          <div className="hud-corner hud-top-left">
-            <button
-              type="button"
-              className="hud-btn hud-btn-muted"
-              onClick={handleReturnToBrief}
-              aria-label="Return to Mission Brief"
-            >
-              <span aria-hidden="true">←</span>
-              <span>Brief</span>
-            </button>
-            <button
-              type="button"
-              className={`hud-btn ${chartsOpen ? 'active' : ''}`}
-              aria-expanded={chartsOpen}
-              onClick={toggleCharts}
-            >
-              <span>Charts</span>
-            </button>
-          </div>
-
-          {/* Top-Center: Moon | Topography */}
-          <div className="hud-top-center">
-            <div className="surface-switch-pill" role="group" aria-label="Surface display mode">
-              <button
-                type="button"
-                className={`hud-seg-btn ${surfaceMode === 'realistic' ? 'active' : ''}`}
-                aria-pressed={surfaceMode === 'realistic'}
-                onClick={() => setSurfaceMode('realistic')}
-              >
-                Moon
-              </button>
-              <button
-                type="button"
-                className={`hud-seg-btn ${surfaceMode === 'topography' ? 'active' : ''}`}
-                aria-pressed={surfaceMode === 'topography'}
-                onClick={() => setSurfaceMode('topography')}
-              >
-                Topography
-              </button>
-            </div>
-
-            {surfaceMode === 'topography' && (
-              <div className="topo-legend-bar" role="region" aria-label="Topographic elevation scale in kilometers">
-                <span className="topo-legend-title">LOLA Elevation</span>
-                <div className="topo-ramp-track" aria-hidden="true" />
-                <div className="topo-ramp-labels">
-                  {TOPO_LEGEND_STOPS.map((stop) => (
-                    <span key={stop.elevKm}>{stop.label}</span>
-                  ))}
-                </div>
+  return <div className="lunar-app">
+    <a className="skip-link" href="#guide-controls">Skip to controls</a>
+    <header className="minimal-header">
+      <a href="#guide-controls" className="wordmark" onClick={() => setStep(0)}>Lunar <span>/ landing guide</span></a>
+      <nav className="top-links" aria-label="Page navigation">
+        <button className="text-action" onClick={() => setStep(0)}>Explore</button>
+        <button className="text-action" onClick={() => setStep(2)}>Guide</button>
+        <button className="text-action" onClick={showSources}>Sources</button>
+      </nav>
+    </header>
+    <main className="explore-main">
+      <section className="moon-column" aria-label="Explore the Moon">
+        <div className="moon-frame"><MoonBoundary onUnavailable={() => setMoonStatus('unavailable')}><Suspense fallback={<MoonPoster />}>
+          <LunarViewport mode="3d" surfaceMode={surface} sites={dataset.sites} entries={entries} activeSlotIdx={safeIndex} epochIdx={current.epochIdx}
+            hasStarted embedded autoRotate={rotating} onAutoRotateChange={setRotating} onStatusChange={setMoonStatus} selectionEnabled={step === 0}
+            showSkyMarkers={false} showCameraTools onSelectActiveSlot={setActiveIndex} selectionMode="cursor"
+            onSelectSiteDirect={(id, index) => chooseNamed(id, index)} onOutsidePolarCoverage={pickCoordinates}
+            reticleCoords={{ latDeg: current.site.center.latitude_deg, lonEastDeg: current.site.center.longitude_east_deg }} />
+        </Suspense></MoonBoundary></div>
+        <div className="moon-caption"><span>{step === 0 ? 'Drag to turn · select a point' : 'Drag to turn · change location in step 1'}</span>
+          {moonStatus === 'ready' && <button className="text-action" onClick={() => setSurface(previous => previous === 'realistic' ? 'topography' : 'realistic')} aria-pressed={surface === 'topography'}>{surface === 'topography' ? 'Show surface' : 'Show topography'}</button>}
+        </div>
+        {surface === 'topography' && moonStatus === 'ready' && <div className="topography-key"><span>Display elevation (km)</span><div className="topography-ramp" role="img" aria-label="Elevation scale: blue and purple are lower, green is zero, yellow and red are higher" /><div className="topography-labels"><span>−9</span><span>0</span><span>+8.5</span></div><p>Visual relief only. Terrain blockage is not calculated.</p></div>}
+      </section>
+      <section className="guide-column" id="guide-controls" tabIndex={-1} aria-label="Location, time and explanations">
+        <nav className="guide-progress" aria-label="Exploration steps">{STEPS.map((label, index) => <button className="guide-step" type="button" key={label} aria-current={index === step ? 'step' : undefined} onClick={() => setStep(index)}>{label}</button>)}</nav>
+        <h1 className="step-heading" ref={heading} tabIndex={-1}>{TITLES[step]}</h1>
+        <section className="source-line" role="region" aria-label="Current scenario"><p>{current.site.name}</p><p>{formatCoordinates(current.site.center.latitude_deg, current.site.center.longitude_east_deg)} · {formatUtc(currentUtc)}</p><p>{!hasChosen && 'Example · '}{current.origin === 'approximate' ? 'Approximate geometry' : 'Precomputed geometry'}</p></section>
+        {step === 0 && <>
+          <p className="step-intro">Choose a point on the Moon, or use the location list.</p>
+          <label className="field-label">Location<select className="native-select" aria-label="Location" value={current.site.id} onChange={event => chooseNamed(event.target.value)}>
+            {current.origin === 'approximate' && <option value={current.site.id}>{current.site.name}</option>}
+            {dataset.sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+          </select></label>
+          <details className="coordinate-fields"><summary>Enter coordinates</summary>
+            <form className="field-stack" noValidate onSubmit={event => {
+              event.preventDefault(); const lat = Number(latitude), lon = Number(longitude);
+              if (!latitude.trim() || !longitude.trim() || !Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -360 || lon > 360) { setCoordinateError('Enter a latitude from −90° to 90° and an east longitude from −360° to 360°.'); return; }
+              setCoordinateError(null); pickCoordinates(lat, lon);
+            }}>
+              <div className="field-pair">
+                <label className="field-label">Latitude (degrees)<input type="number" inputMode="decimal" step="any" min="-90" max="90" value={latitude} aria-invalid={coordinateError ? true : undefined} aria-describedby={coordinateError ? 'coordinate-error' : undefined} onChange={event => setLatitude(event.target.value)} /></label>
+                <label className="field-label">Longitude east (degrees)<input type="number" inputMode="decimal" step="any" min="-360" max="360" value={longitude} aria-invalid={coordinateError ? true : undefined} aria-describedby={coordinateError ? 'coordinate-error' : undefined} onChange={event => setLongitude(event.target.value)} /></label>
               </div>
-            )}
-          </div>
-
-          {/* Top-Right: Sites (1–4) */}
-          <div className="hud-corner hud-top-right">
-            <button
-              type="button"
-              className={`hud-btn ${activePopover === 'selection' ? 'active' : ''}`}
-              aria-expanded={activePopover === 'selection'}
-              onClick={() => togglePopover('selection')}
-            >
-              <span>Sites ({entries.length})</span>
-            </button>
-          </div>
-
-          {coverageNotice && activePopover !== 'selection' && (
-            <div className="floating-notice" role="status">
-              <span>{coverageNotice}</span>
-              <button
-                type="button"
-                className="btn-link-sm"
-                onClick={() => setCoverageNotice(null)}
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {/* Minimal 1..4 Site Dock above bottom bar (Orbit 3D mode) */}
-          {viewportMode === '3d' && !chartsOpen && !dataOpen && activePopover === null && (
-            <div className="ab-floating-dock" aria-label="Selected lunar sites">
-              <div className="ab-dock-row">
-                {entries.map((entry, idx) => {
-                  const ep = entry.analysis.epochStates[clampedEpochIdx];
-                  const isArmed = idx === safeActiveIdx;
-                  return (
-                    <div
-                      key={`${entry.label}-${idx}`}
-                      className={`ab-summary-card ${isArmed ? 'is-armed' : ''}`}
-                    >
-                      <button
-                        type="button"
-                        className="ab-card-main-btn"
-                        aria-pressed={isArmed}
-                        onClick={() => {
-                          if (isArmed) {
-                            setActivePopover('selection');
-                          } else {
-                            setActiveSlotIdx(idx);
-                          }
-                        }}
-                      >
-                        <span className="ab-chip" aria-hidden="true">
-                          {entry.label}
-                        </span>
-                        <div className="ab-card-text">
-                          <strong>{entry.site.name}</strong>
-                          <span>
-                            {Math.abs(entry.analysis.terrain.latitudeDeg).toFixed(2)}°{' '}
-                            {entry.analysis.terrain.latitudeDeg < 0 ? 'S' : 'N'} · Sun{' '}
-                            {(ep.fIllum * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                      </button>
-                      {entries.length > 1 && (
-                        <button
-                          type="button"
-                          className="ab-card-remove"
-                          aria-label={`Remove Site ${entry.label}`}
-                          onClick={() => handleRemoveSlot(idx)}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {entries.length < MAX_SITE_SLOTS && (
-                  <button
-                    type="button"
-                    className="ab-add-btn"
-                    onClick={handleAddSlot}
-                    aria-label="Add comparison site"
-                  >
-                    + Site
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Bottom-Left: Orbit 3D / Astronaut */}
-          <div className="hud-corner hud-bottom-left">
-            <div className="mode-switch-pill" role="group" aria-label="Switch Orbit 3D and Astronaut surface view">
-              <button
-                type="button"
-                className={`hud-seg-btn ${viewportMode === '3d' ? 'active' : ''}`}
-                aria-pressed={viewportMode === '3d'}
-                onClick={() => setViewportMode('3d')}
-              >
-                Orbit 3D
-              </button>
-              <button
-                type="button"
-                className={`hud-seg-btn ${viewportMode === 'astronaut' ? 'active' : ''}`}
-                aria-pressed={viewportMode === 'astronaut'}
-                onClick={() => setViewportMode('astronaut')}
-              >
-                Astronaut
-              </button>
-            </div>
-          </div>
-
-          {/* Bottom-Center: Time (UTC) */}
-          <div className="hud-bottom-center">
-            <div className="time-pill" role="group" aria-label="UTC epoch playback controls">
-              <button
-                type="button"
-                className={`time-pill-trigger ${activePopover === 'time' ? 'active' : ''}`}
-                aria-expanded={activePopover === 'time'}
-                onClick={() => togglePopover('time')}
-              >
-                <span>Time</span>
-              </button>
-              <div className="time-pill-readout">
-                <strong>{formatUtcShort(currentUtc)}</strong>
-                <span>{durationDays}d window</span>
-              </div>
-              <button
-                type="button"
-                className="time-pill-play"
-                aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
-                onClick={() => setIsPlaying((p) => !p)}
-              >
-                {isPlaying ? 'Pause' : 'Play'}
-              </button>
-            </div>
-          </div>
-
-          {/* Bottom-Right: Data */}
-          <div className="hud-corner hud-bottom-right">
-            <button
-              type="button"
-              className={`hud-btn ${dataOpen ? 'active' : ''}`}
-              aria-expanded={dataOpen}
-              onClick={toggleData}
-            >
-              <span>Data</span>
-              <span className="hud-badge" aria-label={`${entries.length} selected sites`}>
-                {entries.length}
-              </span>
-            </button>
-          </div>
-
-          {/* Popovers */}
-          {activePopover === 'time' && (
-            <TimePopover
-              timestampsUtc={dataset.mission_window.timestamps_utc}
-              epochIdx={clampedEpochIdx}
-              startIdx={startIdx}
-              durationDays={durationDays}
-              slice={slice}
-              isPlaying={isPlaying}
-              speed={speed}
-              onChangeStartIdx={(idx) => {
-                setIsPlaying(false);
-                setStartIdx(idx);
-              }}
-              onChangeEpochIdx={(idx) => {
-                setIsPlaying(false);
-                setEpochIdx(idx);
-              }}
-              onChangeDuration={(days) => setDurationDays(days)}
-              onTogglePlay={() => setIsPlaying((p) => !p)}
-              onResetTime={handleResetTime}
-              onChangeSpeed={(sp) => setSpeed(sp)}
-              onClose={() => setActivePopover(null)}
-            />
-          )}
-
-          {activePopover === 'selection' && (
-            <SelectionPopover
-              sites={dataset.sites}
-              entries={entries}
-              activeSlotIdx={safeActiveIdx}
-              selectionMode={selectionMode}
-              reticleCoords={reticleCoords}
-              coverageNotice={coverageNotice}
-              onChangeSelectionMode={setSelectionMode}
-              onSelectActiveSlot={setActiveSlotIdx}
-              onAssignSiteAt={handleAssignSiteAt}
-              onPickCustomCoords={(lat, lon, idx) => handleCoordinatePick(lat, lon, idx)}
-              onAddSlot={handleAddSlot}
-              onRemoveSlot={handleRemoveSlot}
-              onSwapFirstTwo={handleSwapFirstTwo}
-              onFixReticleToActive={() =>
-                handleCoordinatePick(reticleCoords.latDeg, reticleCoords.lonEastDeg, safeActiveIdx)
-              }
-              onCompareWithPsr={handleCompareWithPsr}
-              onKeepOnlyOne={handleKeepOnlyOne}
-              onClose={() => setActivePopover(null)}
-            />
-          )}
-
-          {/* Side Drawers */}
-          {chartsOpen && (
-            <ChartsDrawer
-              entries={entries}
-              activeSlotIdx={safeActiveIdx}
-              horizonAzDeg={dataset.horizon_azimuths_deg}
-              missionWindow={dataset.mission_window}
-              slice={slice}
-              epochIdx={clampedEpochIdx}
-              config={config}
-              onSelectEpoch={(idx) => {
-                setIsPlaying(false);
-                setEpochIdx(idx);
-              }}
-              onClose={() => setChartsOpen(false)}
-            />
-          )}
-
-          {dataOpen && (
-            <DataDrawer
-              entries={entries}
-              activeSlotIdx={safeActiveIdx}
-              onSelectActiveSlot={setActiveSlotIdx}
-              summary={plainSummary}
-              slice={slice}
-              config={config}
-              provenance={dataset.provenance}
-              onChangeOffset={handleChangeOffset}
-              onChangeConfig={setConfig}
-              onClose={() => setDataOpen(false)}
-            />
-          )}
-        </>
-      )}
-    </div>
-  );
+              {coordinateError && <p role="alert" className="inline-error" id="coordinate-error">{coordinateError}</p>}
+              <button className="text-action" type="submit">Use these coordinates</button>
+            </form>
+          </details>
+        </>}
+        {step === 1 && <><p className="step-intro">The terrain stays the same. The Sun and Earth change position.</p>
+          <TimeEditor key={`active-time-${safeIndex}`} scenario={current} dataset={dataset} onCommit={(epoch, continueNext) => { changeTime(safeIndex, epoch); if (continueNext) setStep(2); }} />
+          <p className="source-line">Available: {formatUtc(dataset.mission_window.timestamps_utc[0])}–{formatUtc(dataset.mission_window.timestamps_utc.at(-1)!)}. Hourly samples.</p>
+        </>}
+        {step >= 2 && <Explanation topic={step === 2 ? 'sun' : 'earth'} site={current.site} epochIdx={current.epochIdx} currentUtc={currentUtc} />}
+        <Conditions scenario={current} /><p className="source-line">Terrain blockage is not calculated.</p>
+        <div className="step-actions">{step > 0 && <button type="button" className="text-action" onClick={() => setStep(previous => previous - 1)}>Back</button>}{step === 1 ? <button key="submit-time" className="text-action" type="submit" form="scenario-time-form" data-continue>{NEXT[step]} <span aria-hidden="true">→</span></button> : step < 3 && <button key={`next-${step}`} type="button" className="text-action" onClick={event => { event.preventDefault(); setStep(previous => previous + 1); }}>{NEXT[step]} <span aria-hidden="true">→</span></button>}</div>
+        {step === 3 && scenarios.length === 1 && <button ref={comparisonLauncher} className="text-action" onClick={() => { setScenarios(previous => [previous[0], { ...previous[0] }]); window.setTimeout(() => comparisonHeading.current?.focus(), 0); }}>Compare another site or date</button>}
+        {scenarios.length === 2 && <section className="comparison" aria-label="Optional comparison">
+          <div className="comparison-head"><h2 ref={comparisonHeading} tabIndex={-1}>Compare.</h2><button className="text-action" onClick={() => { setScenarios(previous => [previous[0]]); setActiveIndex(0); setStep(3); window.setTimeout(() => comparisonLauncher.current?.focus(), 0); }}>Remove comparison</button></div>
+          <div className="step-actions" role="group" aria-label="Choose the scenario shown on the Moon"><button className="text-action" aria-pressed={safeIndex === 0} onClick={() => setActiveIndex(0)}>Show A on Moon</button><button className="text-action" aria-pressed={safeIndex === 1} onClick={() => setActiveIndex(1)}>Show B on Moon</button></div>
+          <p className="source-line">A: {scenarios[0].site.name} · {formatUtc(dataset.mission_window.timestamps_utc[scenarios[0].epochIdx])} · {scenarios[0].origin === 'approximate' ? 'Approximate geometry' : 'Precomputed geometry'}</p>
+          <Conditions scenario={scenarios[0]} compact label="Scenario A Sun and Earth conditions" />
+          <label className="field-label">Comparison location<select className="native-select" aria-label="Comparison location" value={scenarios[1].site.id} onChange={event => chooseNamed(event.target.value, 1)}>{scenarios[1].origin === 'approximate' && <option value={scenarios[1].site.id}>{scenarios[1].site.name}</option>}{dataset.sites.map(site => <option value={site.id} key={site.id}>{site.name}</option>)}</select></label>
+          <TimeEditor comparison scenario={scenarios[1]} dataset={dataset} onCommit={epoch => changeTime(1, epoch)} />
+          <p className="source-line">B: {scenarios[1].site.name} · {formatUtc(dataset.mission_window.timestamps_utc[scenarios[1].epochIdx])} · {scenarios[1].origin === 'approximate' ? 'Approximate geometry' : 'Precomputed geometry'}</p>
+          <Conditions scenario={scenarios[1]} compact /><p className="source-line">{scenarios[0].site.id === scenarios[1].site.id ? scenarios[0].epochIdx === scenarios[1].epochIdx ? 'Same point and time. Change either to compare.' : 'Same point, different times.' : scenarios[0].epochIdx === scenarios[1].epochIdx ? 'Different points at the same time.' : 'Different points and times; either change can affect the angles.'}</p>
+        </section>}
+        <details className="source-section" ref={sources}><summary>Sources &amp; limits</summary>
+          <p>Named locations use saved SPICE-based positions. Custom points use an approximate reprojection on a spherical Moon. These are calculations, not live observations.</p>
+          <p>The geometric horizon ignores mountains and crater rims. Sunlight and Earth direction do not determine electricity, battery life or radio performance.</p>
+          <p>Display imagery and relief are separate from these results. The reference image and 3D shading are illustrative; neither shows sunlight at your selected time.</p>
+          <p><a href="https://svs.gsfc.nasa.gov/5001/" target="_blank" rel="noreferrer">Moon mosaic — NASA’s Scientific Visualization Studio</a> · <a href="https://svs.gsfc.nasa.gov/4720/" target="_blank" rel="noreferrer">LROC / LOLA display sources</a> · <a href="https://naif.jpl.nasa.gov/naif/" target="_blank" rel="noreferrer">NAIF SPICE</a></p>
+          <p>The saved Horizons check covers sixteen times at one site. It does not validate all global locations, terrain, energy or radio links.</p>
+        </details>
+      </section>
+    </main>
+    <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
+  </div>;
 }

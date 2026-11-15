@@ -1,0 +1,87 @@
+.explainer {
+  color: inherit;
+  font-size: 17px;
+  line-height: 1.55;
+  max-width: 42rem;
+}
+
+.explainer-reading {
+  margin: 0;
+  max-width: 56ch;
+}
+
+.explainer-figure {
+  margin: 0.5rem 0 1rem;
+}
+
+.explainer-diagram {
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  height: auto;
+  color: #ededf0;
+}
+
+.explainer-horizon {
+  stroke: #92929a;
+  stroke-width: 1;
+}
+
+.explainer-sightline {
+  stroke: currentColor;
+  stroke-width: 1.25;
+}
+
+.explainer-observer {
+  fill: #ededf0;
+}
+
+.explainer-body-center {
+  fill: #000;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.explainer-diagram-label,
+.explainer-diagram-angle {
+  fill: currentColor;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.explainer-diagram-angle {
+  font-variant-numeric: tabular-nums;
+}
+
+.explainer-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: #b8b8c0;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.explainer-details {
+  font-size: 17px;
+}
+
+.explainer-details > summary {
+  width: fit-content;
+  min-height: 44px;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.explainer-details > p {
+  max-width: 56ch;
+  margin: 0.5rem 0 1rem;
+}
+
+.explainer-details > summary:focus-visible {
+  outline: 2px solid var(--focus-ring, #7dd3fc);
+  outline-offset: 4px;
+}
