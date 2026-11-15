@@ -151,7 +151,7 @@ export const GLOSSARY_ITEMS: GlossaryItem[] = [
     term: 'PSR (Permanently Shadowed Region)',
     shortDesc: 'Polar crater interiors never reached by direct sunlight.',
     detailDesc:
-      'Because the Moon tilts only ~1.54° relative to the ecliptic, deep craters such as Shackleton stay perpetually cold and dark, preserving potential water ice while challenging solar power and direct radio links.',
+      'The Moon’s small axial tilt allows some polar depressions to remain in shadow. A dark 30-day sample alone does not establish permanent shadow; this app does not assess the presence of ice.',
   },
   {
     id: 'dte',
@@ -163,16 +163,16 @@ export const GLOSSARY_ITEMS: GlossaryItem[] = [
   {
     id: 'elfo',
     term: 'ELFO Relay Satellites',
-    shortDesc: 'Elliptical Lunar Frozen Orbit spacecraft relaying signals when Earth is blocked.',
+    shortDesc: 'An illustrative orbit arrangement that may offer another line of sight.',
     detailDesc:
-      'A 3-satellite phased ELFO constellation (a = 5,740 km, e = 0.58) lingers high above the South Pole near apolune, restoring connectivity inside shadowed craters.',
+      'The model uses a 3-satellite phased ELFO constellation (a = 5,740 km, e = 0.58). Availability of an operating service and radio-link performance are not assessed.',
   },
   {
     id: 'blackout',
-    term: 'Communications Blackout',
-    shortDesc: 'Contiguous interval with neither Direct-to-Earth nor active relay line-of-sight.',
+    term: 'Visibility Gap',
+    shortDesc: 'A sampled gap in the selected Earth and modelled relay visibility criteria.',
     detailDesc:
-      'Measured as outage frequency and longest uninterrupted blackout duration (hours) within the selected UTC window.',
+      'The displayed gap describes the selected geometric criteria within the analysis window. It does not establish a radio outage or an exact rise/set time.',
   },
   {
     id: 'clps_slope',

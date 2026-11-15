@@ -1,0 +1,135 @@
+.home-explainers .home-video video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  object-fit: contain;
+}
+
+.home-explainers .home-video-caption,
+.home-explainers .home-video-error,
+.home-explainers .home-explainer-details {
+  margin: 0;
+  color: #c0c0c8;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.home-explainers .home-video-caption a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.home-explainers .home-explainer-details summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 0;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  color: #e4e4e7;
+}
+
+.home-explainers .home-explainer-details summary::before {
+  content: '+';
+}
+
+.home-explainers .home-explainer-details[open] summary::before {
+  content: '−';
+}
+
+.home-explainers .home-explainer-details p {
+  margin: 8px 0 0;
+}
+
+.home-explainers .home-explainer-row--video-first > .section-copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.home-explainers .home-explainer-row--video-first > .home-video {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.home-explainers .home-landmark-reading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 22px 0 14px;
+}
+
+.home-explainers .home-landmark-reading strong {
+  font-weight: 500;
+}
+
+.home-explainers .home-landmark-reading p {
+  margin: 0;
+  color: #c0c0c8;
+  font-size: 0.9375rem;
+}
+
+.home-explainers .home-explorer-example {
+  margin: 16px 0;
+}
+
+.home-explainers .home-explorer-example p {
+  margin: 0;
+  color: #c0c0c8;
+  font-size: 0.9375rem;
+}
+
+.home-explainers .home-text-action {
+  min-height: 44px;
+  padding: 4px 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.home-explainers .home-landmark-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.9375rem;
+}
+
+.home-explainers .home-landmark-select select {
+  min-height: 44px;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #71717a;
+  background: #000;
+  color: #f4f4f5;
+  font: inherit;
+}
+
+.home-explainers .home-explainer-details summary:focus-visible,
+.home-explainers .home-text-action:focus-visible,
+.home-explainers .home-landmark-select select:focus-visible,
+.home-explainers .home-video video:focus-visible,
+.home-explainers .home-video-caption a:focus-visible {
+  outline: 2px solid #f4f4f5;
+  outline-offset: 4px;
+}
+
+.home-explainers .polar-hotspot {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (max-width: 900px) {
+  .home-explainers .home-explainer-row--video-first > .section-copy,
+  .home-explainers .home-explainer-row--video-first > .home-video {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}

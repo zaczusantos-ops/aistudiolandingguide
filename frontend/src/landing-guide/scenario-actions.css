@@ -1,0 +1,25 @@
+.scenario-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 24px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.scenario-actions p { margin: 0; }
+.scenario-actions .btn-link-sm { min-height: 44px; text-align: left; }
+.scenario-action-note { color: #c0c0c8; }
+.scenario-share-field { display: grid; gap: 6px; width: 100%; }
+.scenario-share-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid #747480;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+.scenario-actions :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

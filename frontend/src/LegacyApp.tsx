@@ -3,6 +3,8 @@ import rawDataset from './data/south_pole_precomputed.v1.json';
 import { parseNavigatorDataset } from './contract';
 import { DEFAULT_CONFIG, evaluateLiveSite } from './navigator/math';
 import { createGeometrySite } from './explorer/geometry';
+import { decodeScenarioUrl, encodeScenarioUrl, ScenarioUrlState } from './explorer/scenarioUrl';
+import { findNextJointVisibility } from './navigator/jointVisibility';
 import { EngineeringConfig, LandingSiteEntry, NavigatorDatasetV1 } from './navigator/types';
 import { AstronautViewport } from './landing-guide/AstronautViewport';
 import { ChartsDrawer } from './landing-guide/ChartsDrawer';
@@ -39,6 +41,7 @@ import {
 } from './landing-guide/state';
 import { TimePopover } from './landing-guide/TimePopover';
 import { buildSiteReadout } from './landing-guide/siteReadings';
+import { ScenarioActions } from './landing-guide/ScenarioActions';
 
 const defaultDataset: NavigatorDatasetV1 = parseNavigatorDataset(rawDataset);
 
@@ -56,27 +59,80 @@ function detectIsMobile(): boolean {
   return window.matchMedia('(max-width: 820px)').matches;
 }
 
+function createSelectedPoint(
+  dataset: NavigatorDatasetV1, latDeg: number, lonEastDeg: number, atlas?: LunarAtlasData,
+): LandingSiteEntry {
+  const geometry = createGeometrySite(dataset, latDeg, lonEastDeg);
+  const site = createCustomLandingSite({
+    latDeg, lonEastDeg,
+    atlas: atlas ?? getLoadedRealAtlasSync() ?? buildLunarAtlasData(dataset.sites, 256, 128),
+    referenceSites: dataset.sites,
+    horizonAzDeg: dataset.horizon_azimuths_deg,
+    missionWindow: dataset.mission_window,
+  });
+  // Keep the astronaut's existing visual scaffold separate from sky readings.
+  site.center.latitude_deg = geometry.center.latitude_deg;
+  site.center.longitude_east_deg = geometry.center.longitude_east_deg;
+  site.sky_series = { ...site.sky_series, ...geometry.sky_series };
+  return site;
+}
+
+function loadInitialScenario(dataset: NavigatorDatasetV1): {
+  scenario: ScenarioUrlState | null; customSite: LandingSiteEntry | null; error: string | null;
+} {
+  if (typeof window === 'undefined') return { scenario: null, customSite: null, error: null };
+  const decoded = decodeScenarioUrl(window.location.search, dataset);
+  if (decoded.status === 'absent') return { scenario: null, customSite: null, error: null };
+  if (decoded.status === 'invalid') return { scenario: null, customSite: null, error: decoded.error };
+  try {
+    const point = decoded.scenario.site;
+    return {
+      scenario: decoded.scenario,
+      customSite: point.kind === 'coordinates'
+        ? createSelectedPoint(dataset, point.latDeg, point.lonEastDeg) : null,
+      error: null,
+    };
+  } catch {
+    return { scenario: null, customSite: null, error: 'This point could not be reconstructed.' };
+  }
+}
+
+function actionContext(
+  slot: SiteSlotState, site: LandingSiteEntry, config: EngineeringConfig, epochIdx: number, startIdx: number, durationDays: DurationDays,
+): string {
+  return JSON.stringify([slot, site.center.latitude_deg, site.center.longitude_east_deg, config, epochIdx, startIdx, durationDays]);
+}
+
 export function LegacyApp({ dataset = defaultDataset }: AppProps) {
-  const [hasStarted, setHasStarted] = useState<boolean>(getInitialAutostart);
+  const [initial] = useState(() => loadInitialScenario(dataset));
+  const [scenarioError, setScenarioError] = useState(initial.error);
+  const [hasStarted, setHasStarted] = useState<boolean>(() => !!initial.scenario || getInitialAutostart());
   const [viewportMode, setViewportMode] = useState<ViewportMode>('3d');
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('realistic');
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('cursor');
 
   const [slots, setSlots] = useState<SiteSlotState[]>(() => [
-    { siteId: dataset.sites[0].id, offsetXNorm: 0, offsetYNorm: 0 },
+    {
+      siteId: initial.scenario?.site.kind === 'named'
+        ? initial.scenario.site.siteId : initial.customSite?.id ?? dataset.sites[0].id,
+      offsetXNorm: initial.scenario?.offsetXNorm ?? 0,
+      offsetYNorm: initial.scenario?.offsetYNorm ?? 0,
+    },
   ]);
-  const [customSites, setCustomSites] = useState<Record<string, LandingSiteEntry>>({});
+  const [customSites, setCustomSites] = useState<Record<string, LandingSiteEntry>>(
+    () => initial.customSite ? { [initial.customSite.id]: initial.customSite } : {},
+  );
   const [activeSlotIdx, setActiveSlotIdx] = useState<number>(0);
 
-  const [startIdx, setStartIdx] = useState<number>(0);
-  const [durationDays, setDurationDays] = useState<DurationDays>(30);
-  const [epochIdx, setEpochIdx] = useState<number>(0);
+  const [startIdx, setStartIdx] = useState<number>(initial.scenario?.startIdx ?? 0);
+  const [durationDays, setDurationDays] = useState<DurationDays>(initial.scenario?.durationDays ?? 30);
+  const [epochIdx, setEpochIdx] = useState<number>(initial.scenario?.epochIdx ?? 0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [speed, setSpeed] = useState<PlaybackSpeed>(1);
-  const [config, setConfig] = useState<EngineeringConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<EngineeringConfig>(initial.scenario?.config ?? DEFAULT_CONFIG);
 
   const [chartsOpen, setChartsOpen] = useState<boolean>(false);
-  const [dataOpen, setDataOpen] = useState<boolean>(false);
+  const [dataOpen, setDataOpen] = useState<boolean>(!!initial.scenario);
   const [activePopover, setActivePopover] = useState<'time' | 'selection' | null>(null);
 
   const [reticleCoords, setReticleCoords] = useState<{ latDeg: number; lonEastDeg: number }>({
@@ -85,6 +141,10 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
   });
   const [coverageNotice, setCoverageNotice] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState<boolean>(detectIsMobile);
+  const [searchFeedback, setSearchFeedback] = useState<{ context: string; text: string } | null>(null);
+  const [shareFeedback, setShareFeedback] = useState<{
+    context: string; url: string; message: string;
+  } | null>(null);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -193,14 +253,89 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     [entries, dataset, clampedEpochIdx, config],
   );
   const terrainSiteIds = useMemo(() => dataset.sites.map(site => site.id), [dataset.sites]);
+  const activeEntry = entries[safeActiveIdx];
+  const activeContext = actionContext(activeEntry.slot, activeEntry.site, config, clampedEpochIdx, startIdx, durationDays);
 
-  const handleStart = (siteId?: string) => {
+  const handleFindNext = () => {
+    setIsPlaying(false);
+    const timestamps = dataset.mission_window.timestamps_utc;
+    if (clampedEpochIdx + 1 >= timestamps.length) {
+      setSearchFeedback({ context: activeContext, text: 'No later samples remain in this dataset.' });
+      return;
+    }
+    if (readouts[safeActiveIdx]?.kind !== 'terrain') return;
+    const result = findNextJointVisibility({
+      site: activeEntry.site,
+      terrainHorizonDeg: activeEntry.analysis.terrain.horizonElevDeg,
+      horizonAzimuthDeg: dataset.horizon_azimuths_deg,
+      sunAngularRadiusDeg: dataset.mission_window.solar_angular_radius_deg,
+      earthAngularRadiusDeg: dataset.mission_window.earth_angular_radius_deg,
+      timestamps,
+      fromEpochIdx: clampedEpochIdx + 1,
+      earthCriterion: config.dteMarginMode === 'center' ? 'center' : 'full-disk',
+    });
+    if (result.status === 'unavailable') {
+      setSearchFeedback({ context: activeContext, text: 'A valid next-sample search is unavailable for these inputs.' });
+      return;
+    }
+    if (result.status === 'not-found') {
+      setSearchFeedback({ context: activeContext, text: result.unknownSamples > 0
+        ? 'No matching later sample was found among the available data. Some samples could not be assessed.'
+        : `No matching later sample was found through ${formatUtcShort(timestamps[timestamps.length - 1])}.` });
+      return;
+    }
+    const nextIdx = result.startEpochIdx;
+    const shiftedWindow = nextIdx > slice.endIdx;
+    if (shiftedWindow) setStartIdx(nextIdx);
+    setEpochIdx(nextIdx);
+    setSearchFeedback({
+      context: actionContext(activeEntry.slot, activeEntry.site, config, nextIdx, shiftedWindow ? nextIdx : startIdx, durationDays),
+      text: `Next matching sample: ${formatUtcShort(timestamps[nextIdx])}. Some sunlight and ${config.dteMarginMode === 'center' ? "Earth's center" : 'the whole Earth'} clear the modeled horizon. This is an hourly sample, not an exact transition time.${result.unknownSamplesBefore > 0 ? ' Earlier missing data prevent ruling out another match.' : ''}${shiftedWindow ? ' The analysis window now starts at this sample.' : ''}`,
+    });
+  };
+
+  const handleShare = async () => {
+    setIsPlaying(false);
+    const catalogued = terrainSiteIds.includes(activeEntry.site.id);
+    const state: ScenarioUrlState = {
+      site: catalogued
+        ? { kind: 'named', siteId: activeEntry.site.id }
+        : { kind: 'coordinates', latDeg: activeEntry.site.center.latitude_deg, lonEastDeg: activeEntry.site.center.longitude_east_deg },
+      epochIdx: clampedEpochIdx, startIdx, durationDays,
+      offsetXNorm: catalogued ? activeEntry.slot.offsetXNorm : 0,
+      offsetYNorm: catalogued ? activeEntry.slot.offsetYNorm : 0,
+      config,
+    };
+    try {
+      const url = encodeScenarioUrl(window.location.href, state, dataset);
+      let message = 'Link ready. Copy it from the field below.';
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url);
+          message = 'Scenario link copied.';
+        }
+      } catch {
+        // Keep a selectable link when clipboard permission is unavailable.
+      }
+      setShareFeedback({ context: activeContext, url, message });
+    } catch {
+      setShareFeedback({ context: activeContext, url: '', message: 'This scenario could not be shared. Check its site, UTC and assumptions.' });
+    }
+  };
+
+  const handleStart = (siteId?: string, sampleIdx?: number) => {
     if (siteId) {
       setSlots((prev) => setSiteSlotAt(prev, 0, siteId));
       setActiveSlotIdx(0);
     }
+    if (sampleIdx !== undefined && dataset.mission_window.timestamps_utc[sampleIdx]) {
+      setIsPlaying(false);
+      setStartIdx(0);
+      setDurationDays(30);
+      setEpochIdx(sampleIdx);
+    }
     setHasStarted(true);
-    setDataOpen(false);
+    setDataOpen(sampleIdx !== undefined);
     setChartsOpen(false);
     setActivePopover(null);
     if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
@@ -230,29 +365,13 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     slotIdx: number,
     atlas?: LunarAtlasData,
   ) => {
-    let geometry;
+    let customSite: LandingSiteEntry;
     try {
-      geometry = createGeometrySite(dataset, latDeg, lonEastDeg);
+      customSite = createSelectedPoint(dataset, latDeg, lonEastDeg, atlas);
     } catch {
       setCoverageNotice('This point could not be assessed. Choose valid lunar coordinates.');
       return;
     }
-    const effectiveAtlas =
-      atlas ?? getLoadedRealAtlasSync() ?? buildLunarAtlasData(dataset.sites, 256, 128);
-    const customSite = createCustomLandingSite({
-      latDeg,
-      lonEastDeg,
-      atlas: effectiveAtlas,
-      referenceSites: dataset.sites,
-      horizonAzDeg: dataset.horizon_azimuths_deg,
-      missionWindow: dataset.mission_window,
-    });
-    // Keep the visual surface scaffold for the existing astronaut view, but
-    // use finite-range spherical sky geometry in the selected point's tracks.
-    // Orbital readings and charts never treat this display atlas as a DEM.
-    customSite.center.latitude_deg = geometry.center.latitude_deg;
-    customSite.center.longitude_east_deg = geometry.center.longitude_east_deg;
-    customSite.sky_series = { ...customSite.sky_series, ...geometry.sky_series };
     setCustomSites((prev) => ({ ...prev, [customSite.id]: customSite }));
     setSlots((prev) => setSiteSlotAt(prev, slotIdx, customSite.id));
     setCoverageNotice(
@@ -355,6 +474,12 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
 
   return (
     <div className="guide-shell" data-started={hasStarted ? 'true' : 'false'}>
+      {scenarioError && (
+        <div className="floating-notice" role="alert">
+          <span>Could not open shared scenario: {scenarioError} Choose a site and UTC to continue.</span>
+          <button type="button" className="btn-link-sm" onClick={() => setScenarioError(null)}>Dismiss</button>
+        </div>
+      )}
       {/* 3D Orbital Moon Stage (fixed backdrop in Brief Hero, fullscreen in Explorer) */}
       <LunarViewport
         mode={viewportMode}
@@ -681,6 +806,18 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               provenance={dataset.provenance}
               onChangeOffset={handleChangeOffset}
               onChangeConfig={setConfig}
+              scenarioActions={(
+                <ScenarioActions
+                  canSearch={readouts[safeActiveIdx]?.kind === 'terrain'}
+                  coverageEnd={formatUtcShort(dataset.mission_window.timestamps_utc[dataset.mission_window.timestamps_utc.length - 1])}
+                  earthCriterion={config.dteMarginMode === 'center' ? 'center above the horizon' : 'whole disk above the horizon'}
+                  searchNotice={searchFeedback?.context === activeContext ? searchFeedback.text : null}
+                  shareMessage={shareFeedback?.context === activeContext ? shareFeedback.message : null}
+                  shareUrl={shareFeedback?.context === activeContext ? shareFeedback.url || null : null}
+                  onFindNext={handleFindNext}
+                  onShare={handleShare}
+                />
+              )}
               onClose={() => setDataOpen(false)}
             />
           )}

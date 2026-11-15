@@ -24,6 +24,7 @@ interface DataDrawerProps {
   provenance: NavigatorProvenance;
   onChangeOffset: (slotIdx: number, xNorm: number, yNorm: number) => void;
   onChangeConfig: (next: EngineeringConfig) => void;
+  scenarioActions?: React.ReactNode;
   onClose: () => void;
 }
 
@@ -37,6 +38,7 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
   provenance,
   onChangeOffset,
   onChangeConfig,
+  scenarioActions,
   onClose,
 }) => {
   const [showGlossary, setShowGlossary] = useState(false);
@@ -90,6 +92,7 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
           </div>
 
           <ConditionReadout siteName={activeEntry.site.name} readout={activeReadout} />
+          {scenarioActions}
 
           {showGlossary && (
             <div className="glossary-box" role="region" aria-label="Glossary of lunar concepts">
@@ -242,7 +245,7 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
 
                 {activeHasTerrain ? <>
                 <div className="section-title-row">
-                  <h4>Local grid (±500 m at Site {activeEntry.label})</h4>
+                  <h4>Local grid (Site {activeEntry.label})</h4>
                   <button
                     type="button"
                     className="btn-link-sm"

@@ -1,0 +1,358 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-11-15T21:39:25.434233+00:00",
+  "purpose": "Two optional educational NASA excerpts for the existing lunar explorer website. Media does not replace interactive point/date selection or supply a selected-state calculation.",
+  "common_display_notice": "NASA example, not the site or date selected in this app.",
+  "common_transcript_notice": "Silent, time-compressed NASA visualization.",
+  "requested_credit": "NASA's Scientific Visualization Studio",
+  "media_guidance_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+  "reuse_note": "Specific silent NASA-supplied variants are credited and linked. No narrated/music variant or third-party soundtrack was included. No NASA endorsement is implied.",
+  "editorial_authorship": "Trim ranges, additional 1.5× speed, posters and descriptive WebVTT are editorial choices for this website; not claims about NASA original editing or app scientific validation.",
+  "assets": [
+    {
+      "id": "sunlight",
+      "title": "Shadows Near the Moon's South Pole",
+      "source": {
+        "page_url": "https://svs.gsfc.nasa.gov/4893/",
+        "original_full_url": "https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004893/moon_spzoom_720p30.mp4",
+        "original_filename": "moon_spzoom_720p30.mp4",
+        "variant": "Visualization with icons. No audio.",
+        "original_bytes": 20700703,
+        "original_sha256": "a97956da479bc75f11a846f6873673022142c9339eeb74c2f5a843083b630051",
+        "original_duration_seconds": 82.0,
+        "original_dimensions": [
+          1280,
+          720
+        ],
+        "original_frame_rate": "30/1",
+        "original_audio_streams": 0,
+        "calendar_dates_verified": null
+      },
+      "credit": "NASA's Scientific Visualization Studio",
+      "people_credits": [
+        "Ernie Wright — visualizer",
+        "David Ladd — producer/editor",
+        "Noah Petro — scientist"
+      ],
+      "edit": {
+        "source_in_seconds": 32,
+        "source_out_seconds_exclusive": 50,
+        "source_span_seconds": 18,
+        "playback_speed_multiplier": 1.5,
+        "output_duration_seconds": 12,
+        "frame_rate": "24/1",
+        "codec": "H.264 / AVC",
+        "pixel_format": "yuv420p",
+        "dimensions": [
+          1280,
+          720
+        ],
+        "full_frame_preserved": true,
+        "audio_removed": true,
+        "output_audio_streams": 0,
+        "fast_start": true,
+        "encoder": "libx264",
+        "encoder_preset": "medium",
+        "crf": 25,
+        "additional_graphics_or_ai_images": false,
+        "note": "Only temporal trim, 1.5x speed, frame-rate reduction and H.264 re-encode. No scientific values, date labels, synthetic terrain or soundtrack added."
+      },
+      "video": {
+        "path": "sunlight.mp4",
+        "bytes": 1953432,
+        "sha256": "342a6c3a78f64df0ac1899d43fb64d7b54f186fcb57ff9a3ddd3e004403964ef"
+      },
+      "poster": {
+        "path": "sunlight.jpg",
+        "bytes": 90215,
+        "sha256": "75621acb37ef10380a8c5c10a9e718a43024dc76816b85e245c9e1ccc196511f",
+        "source_timestamp_seconds": 32,
+        "clip_timestamp_seconds": 0.0,
+        "dimensions": [
+          1280,
+          720
+        ],
+        "reason": "First frame of the chosen close-view interval; illuminated terrain and long shadows are already visible."
+      },
+      "captions": {
+        "path": "sunlight.vtt",
+        "bytes": 218,
+        "sha256": "ffa911ba48ae198275f785015387b93df67d7246b9fe63ec93bfadd9b701ba90",
+        "language": "en",
+        "authorship": "Original descriptive English captions for this edited excerpt; not NASA narration captions.",
+        "cues": [
+          {
+            "start": "00:00.000",
+            "end": "00:04.000",
+            "text": "Sunlight shifts across the lunar south-pole terrain."
+          },
+          {
+            "start": "00:04.000",
+            "end": "00:08.000",
+            "text": "Long shadows move over ridges and crater floors."
+          },
+          {
+            "start": "00:08.000",
+            "end": "00:12.000",
+            "text": "NASA example. Time is compressed."
+          }
+        ]
+      },
+      "descriptive_transcript": "In this NASA visualization, shifting sunlight moves shadows across ridges and crater floors.",
+      "caption_transcript": "Sunlight shifts across the lunar south-pole terrain. Long shadows move over ridges and crater floors. NASA example. Time is compressed.",
+      "visual_context": "Close view of lunar south-pole terrain. Original NASA Sun-direction icon, distance scale and time-progress icons are retained.",
+      "frame_review": {
+        "method": "Frames extracted from NASA original with ffmpeg and visually inspected using view_image; encoded playback also visually checked in Chromium screenshot.",
+        "sampled_original_seconds": [
+          0,
+          8,
+          16,
+          24,
+          26,
+          28,
+          30,
+          32,
+          34,
+          36,
+          38,
+          40,
+          42,
+          44,
+          46,
+          48,
+          56,
+          64,
+          72
+        ],
+        "selected_interval_reason": "Visible moving terrain shadows without introductory zoom."
+      },
+      "science_boundary": [
+        "NASA illustrative visualization, not a live camera recording.",
+        "Example location/time, not the app-selected site or date.",
+        "Source calendar dates not established; no November 2026 mapping.",
+        "Does not validate app terrain, power, antenna performance, radio links or relay availability."
+      ]
+    },
+    {
+      "id": "earth-view",
+      "title": "Earth and Sun from the Moon's South Pole",
+      "source": {
+        "page_url": "https://svs.gsfc.nasa.gov/4944/",
+        "original_full_url": "https://svs.gsfc.nasa.gov/vis/a000000/a004900/a004944/shackleton_earth_720p30.mp4",
+        "original_filename": "shackleton_earth_720p30.mp4",
+        "variant": "Visualization without music or narration.",
+        "original_bytes": 8250851,
+        "original_sha256": "16f282a9eb304140f38315b8ccdb8fb524dc72e0d1489739985a350cc9a5abf2",
+        "original_duration_seconds": 120.0,
+        "original_dimensions": [
+          1280,
+          720
+        ],
+        "original_frame_rate": "30/1",
+        "original_audio_streams": 0,
+        "calendar_dates_verified": null
+      },
+      "credit": "NASA's Scientific Visualization Studio",
+      "people_credits": [
+        "Ernie Wright — visualizer",
+        "Staci Tiedeken — producer",
+        "David Ladd — video editor"
+      ],
+      "edit": {
+        "source_in_seconds": 92,
+        "source_out_seconds_exclusive": 110,
+        "source_span_seconds": 18,
+        "playback_speed_multiplier": 1.5,
+        "output_duration_seconds": 12,
+        "frame_rate": "24/1",
+        "codec": "H.264 / AVC",
+        "pixel_format": "yuv420p",
+        "dimensions": [
+          1280,
+          720
+        ],
+        "full_frame_preserved": true,
+        "audio_removed": true,
+        "output_audio_streams": 0,
+        "fast_start": true,
+        "encoder": "libx264",
+        "encoder_preset": "medium",
+        "crf": 24,
+        "additional_graphics_or_ai_images": false,
+        "note": "Only temporal trim, 1.5x speed, frame-rate reduction and H.264 re-encode. No scientific values, date labels, synthetic terrain or soundtrack added."
+      },
+      "video": {
+        "path": "earth-view.mp4",
+        "bytes": 548636,
+        "sha256": "32c18d2278e378606916538904de6a07f60de3ddb427a8cda5fe21b0d9376208"
+      },
+      "poster": {
+        "path": "earth-view.jpg",
+        "bytes": 17501,
+        "sha256": "61eb9d2d26f5204a07be70584b10aa6a39976a3674b8d95b2617d13c695a76d4",
+        "source_timestamp_seconds": 98,
+        "clip_timestamp_seconds": 4.0,
+        "dimensions": [
+          1280,
+          720
+        ],
+        "reason": "First sampled, clearly separated Earth disk after emergence. Source92s and94s hide Earth;96s shows emergence;98s shows it above the ridge. Poster is clip-relative4s, not its hidden-Earth opening."
+      },
+      "captions": {
+        "path": "earth-view.vtt",
+        "bytes": 232,
+        "sha256": "1b0747b2615828f668146a6c9821b194216c693bb513645b82302237bc55ce99",
+        "language": "en",
+        "authorship": "Original descriptive English captions for this edited excerpt; not NASA narration captions.",
+        "cues": [
+          {
+            "start": "00:00.000",
+            "end": "00:02.500",
+            "text": "From Shackleton's rim, distant terrain hides Earth."
+          },
+          {
+            "start": "00:02.500",
+            "end": "00:07.500",
+            "text": "Earth comes into view above the ridge."
+          },
+          {
+            "start": "00:07.500",
+            "end": "00:12.000",
+            "text": "Earth changes height in this time-compressed NASA example."
+          }
+        ]
+      },
+      "descriptive_transcript": "From a fixed virtual viewpoint on Shackleton’s rim, Earth emerges above a distant ridge and changes height in the sky.",
+      "caption_transcript": "From Shackleton's rim, distant terrain hides Earth. Earth comes into view above the ridge. Earth changes height in this time-compressed NASA example.",
+      "visual_context": "Fixed virtual ground-level viewpoint on Shackleton's rim, looking toward Earth and distant terrain.",
+      "frame_review": {
+        "method": "Frames extracted from NASA original with ffmpeg and visually inspected using view_image; encoded playback also visually checked in Chromium screenshot.",
+        "sampled_original_seconds": [
+          40,
+          45,
+          50,
+          55,
+          60,
+          65,
+          70,
+          75,
+          80,
+          85,
+          86,
+          88,
+          90,
+          92,
+          94,
+          96,
+          98,
+          100,
+          102,
+          104,
+          106,
+          108,
+          110,
+          112,
+          114,
+          116,
+          118,
+          119
+        ],
+        "selected_interval_reason": "Earth starts hidden, emerges above distant terrain, changes apparent height; avoids the eclipse in the earlier 50–80 s interval."
+      },
+      "science_boundary": [
+        "NASA illustrative visualization, not a live camera recording.",
+        "Example location/time, not the app-selected site or date.",
+        "Source calendar dates not established; no November 2026 mapping.",
+        "Does not validate app terrain, power, antenna performance, radio links or relay availability."
+      ]
+    }
+  ],
+  "package_bytes_excluding_manifest": 2610236,
+  "validation": {
+    "ffprobe": "Passed: each derivative is 12 s, 1280×720, H.264, yuv420p, 24 fps, with zero audio streams.",
+    "decoded_to_end": true,
+    "native_playback": {
+      "checked_at_utc": "2026-11-15T21:38:00.465Z",
+      "method": "Chromium native HTMLVideoElement, local HTTP with byte ranges, no deployment",
+      "chromium": "156.0.8078.79",
+      "assets": [
+        {
+          "id": "sunlight",
+          "width": 1280,
+          "height": 720,
+          "duration": 12,
+          "muted": true,
+          "ready_state": 4,
+          "text_track_mode": "showing",
+          "cues": [
+            {
+              "start": 0,
+              "end": 4,
+              "text": "Sunlight shifts across the lunar south-pole terrain."
+            },
+            {
+              "start": 4,
+              "end": 8,
+              "text": "Long shadows move over ridges and crater floors."
+            },
+            {
+              "start": 8,
+              "end": 12,
+              "text": "NASA example. Time is compressed."
+            }
+          ],
+          "active_caption": [
+            "Long shadows move over ridges and crater floors."
+          ],
+          "media_error": null,
+          "reached_end": true,
+          "playing_sample": {
+            "paused": false,
+            "current_time": 0.3187,
+            "decoded_frames": 12
+          }
+        },
+        {
+          "id": "earth-view",
+          "width": 1280,
+          "height": 720,
+          "duration": 12,
+          "muted": true,
+          "ready_state": 4,
+          "text_track_mode": "showing",
+          "cues": [
+            {
+              "start": 0,
+              "end": 2.5,
+              "text": "From Shackleton's rim, distant terrain hides Earth."
+            },
+            {
+              "start": 2.5,
+              "end": 7.5,
+              "text": "Earth comes into view above the ridge."
+            },
+            {
+              "start": 7.5,
+              "end": 12,
+              "text": "Earth changes height in this time-compressed NASA example."
+            }
+          ],
+          "active_caption": [
+            "Earth comes into view above the ridge."
+          ],
+          "media_error": null,
+          "reached_end": true,
+          "playing_sample": {
+            "paused": false,
+            "current_time": 0.303,
+            "decoded_frames": 12
+          }
+        }
+      ],
+      "errors": [],
+      "status": "passed"
+    },
+    "preview_delivery_tested": false,
+    "scope": "Local HTTP native-player test only. Final app/Preview integration and anonymous access are root responsibilities."
+  }
+}

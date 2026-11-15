@@ -166,7 +166,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     expect(customMid.description).toMatch(/Outside the 80°S–90°S polar ELFO/i);
   });
 
-  it('renders pure-black casual interactive brief without How it works modal and lets users explore data & launch', () => {
+  it('preserves the Moon brief and opens exploration from accessible NASA explanations', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: /Landing\s*Guide\./i })).toBeInTheDocument();
@@ -175,28 +175,26 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     );
     expect(screen.queryByRole('button', { name: /How it works/i })).not.toBeInTheDocument();
 
-    expect(screen.getByRole('heading', { name: /Eternal peaks beside pitch-black craters\./i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Drag the slider to watch the Sun skim the mountains\./i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /When Earth disappears behind a crater wall\./i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /A low Sun, an uneven horizon\./i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /What keeps a site in sunlight\?/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /When can Earth be seen\?/i })).toBeInTheDocument();
     expect(
-      screen.getByAltText(/NASA LRO LOLA LDEM_80S_80M hillshaded elevation map/i),
+      screen.getByAltText(/NASA LOLA south-pole terrain map/i),
     ).toBeInTheDocument();
 
     // Interactive South Pole landmark hotspot
     const missionSection = document.getElementById('mission')!;
     fireEvent.click(within(missionSection).getByRole('button', { name: /^Inspect Malapert Massif$/i }));
-    expect(within(missionSection).getByRole('button', { name: /Inspect Malapert Massif in 3D/i })).toBeInTheDocument();
+    expect(within(missionSection).getByRole('button', { name: /Explore this site/i })).toBeInTheDocument();
 
-    // Interactive Sunlight horizon scrubber & toggle
-    const energySection = document.getElementById('energy')!;
-    fireEvent.click(within(energySection).getByRole('button', { name: /Shackleton Crater Floor/i }));
-    const slider = within(energySection).getByRole('slider', { name: /Scrub UTC hour across 30 days/i });
-    fireEvent.change(slider, { target: { value: '360' } });
-
-    // Interactive Comms ELFO toggle
-    const relayBtn = screen.getByRole('button', { name: /Direct Earth Only/i });
-    fireEvent.click(relayBtn);
-    expect(screen.getByRole('button', { name: /\+ ELFO Relay On/i })).toBeInTheDocument();
+    // Explanatory media are optional and never autoplay.
+    const videos = document.querySelectorAll('video');
+    expect(videos).toHaveLength(2);
+    for (const video of videos) {
+      expect(video).toHaveAttribute('controls');
+      expect(video).toHaveAttribute('preload', 'none');
+      expect(video).not.toHaveAttribute('autoplay');
+    }
 
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
 
