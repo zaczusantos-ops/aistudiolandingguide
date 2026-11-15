@@ -1,0 +1,99 @@
+.condition-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  color: var(--ink-white, #f4f4f5);
+  font-size: 1rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.condition-readout p,
+.condition-readout h4 {
+  margin: 0;
+}
+
+.condition-context {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.condition-context strong,
+.condition-body h4 {
+  font-weight: 500;
+}
+
+.condition-context time,
+.condition-context > span,
+.condition-angle,
+.condition-basis,
+.condition-model-note {
+  color: #c0c0c8;
+  font-size: 0.9375rem;
+}
+
+.condition-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.condition-body h4 {
+  font-size: 1rem;
+}
+
+.condition-body h4 span {
+  display: block;
+  font-weight: 400;
+}
+
+.condition-details > summary,
+.condition-source-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  width: fit-content;
+  list-style: none;
+}
+
+.condition-details > summary::before,
+.condition-source-details > summary::before {
+  content: '+';
+}
+
+.condition-details[open] > summary::before,
+.condition-source-details[open] > summary::before {
+  content: '−';
+}
+
+.condition-details > summary:focus-visible,
+.condition-source-details > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.condition-details p + p {
+  margin-top: 12px;
+}
+
+.side-drawer .condition-table-note,
+.side-drawer .condition-source-note,
+.side-drawer .condition-coordinate,
+.side-drawer .condition-source-details {
+  margin: 0;
+  color: #c0c0c8;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.condition-source-details ul {
+  padding-left: 20px;
+}
+
+.condition-source-details li + li {
+  margin-top: 8px;
+}

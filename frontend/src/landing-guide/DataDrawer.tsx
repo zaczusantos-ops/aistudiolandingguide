@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { ConditionReadout } from './ConditionReadout';
+import type { SiteReadout } from './siteReadings';
 import {
   EngineeringConfig,
   NavigatorProvenance,
@@ -13,6 +15,7 @@ import {
 
 interface DataDrawerProps {
   entries: EvaluatedSlotEntry[];
+  readouts: SiteReadout[];
   activeSlotIdx: number;
   onSelectActiveSlot: (index: number) => void;
   summary: PlainLanguageSummary;
@@ -26,9 +29,9 @@ interface DataDrawerProps {
 
 export const DataDrawer: React.FC<DataDrawerProps> = ({
   entries,
+  readouts,
   activeSlotIdx,
   onSelectActiveSlot,
-  summary,
   slice,
   config,
   provenance,
@@ -40,7 +43,20 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const clpsLimit = provenance.conventions.clps_slope_limit_deg;
-  const activeEntry = entries[activeSlotIdx] ?? entries[0];
+  const activeIndex = entries[activeSlotIdx] ? activeSlotIdx : 0;
+  const activeEntry = entries[activeIndex];
+  const activeReadout = readouts[activeIndex];
+  const hasTerrain = (index: number) => readouts[index]?.kind === 'terrain';
+  const activeHasTerrain = hasTerrain(activeIndex);
+  const hasMissingMetrics = entries.some((_, index) => !hasTerrain(index));
+  const metric = (index: number, value: number, decimals: number, unit: string) => (
+    hasTerrain(index) && Number.isFinite(value) ? `${value.toFixed(decimals)}${unit}` : '—'
+  );
+  const validationError = (value: number | null | undefined) => (
+    typeof value === 'number' && Number.isFinite(value) ? `${value}°` : 'not available'
+  );
+
+  if (!activeEntry) return null;
 
   return (
     <aside className="side-drawer drawer-right" aria-label="Site metrics and scientific provenance drawer">
@@ -62,35 +78,18 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
       <div className="drawer-scroll">
         <section className="data-section" aria-label="Plain language summary">
           <div className="section-title-row">
-            <h3>1. Summary</h3>
+            <h3>1. Sun &amp; Earth</h3>
             <button
               type="button"
               className="btn-link-sm"
               aria-expanded={showGlossary}
               onClick={() => setShowGlossary((v) => !v)}
             >
-              What does this mean?
+              Glossary
             </button>
           </div>
 
-          <div className="plain-cards">
-            <article className="plain-card">
-              <h4>Where am I looking?</h4>
-              <p>{summary.whereText}</p>
-            </article>
-            <article className="plain-card">
-              <h4>What is visible right now?</h4>
-              <p>{summary.nowText}</p>
-            </article>
-            <article className="plain-card">
-              <h4>How does it change over {slice.totalHours}h?</h4>
-              <p>{summary.periodText}</p>
-            </article>
-          </div>
-
-          <div className="honest-callout" role="note">
-            <strong>Scientific transparency:</strong> {summary.limitationNote}
-          </div>
+          <ConditionReadout siteName={activeEntry.site.name} readout={activeReadout} />
 
           {showGlossary && (
             <div className="glossary-box" role="region" aria-label="Glossary of lunar concepts">
@@ -109,10 +108,16 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
 
         <section className="data-section" aria-label="Window metrics table">
           <h3>2. Window Metrics</h3>
+          {hasMissingMetrics && (
+            <p className="condition-table-note">
+              — Not calculated for chosen points: terrain, energy and relay coverage.
+              Their Sun and Earth reading describes the selected instant only.
+            </p>
+          )}
           <div className="accessible-table-wrap">
             <table className="data-table">
               <caption>
-                Preliminary geometric evaluation ({slice.totalHours}h) — {entries.map((e) => `${e.label}: ${e.site.name}`).join(', ')}
+                Estimated over {slice.totalHours} h — {entries.map((e) => `${e.label}: ${e.site.name}`).join(', ')}
               </caption>
               <thead>
                 <tr>
@@ -127,53 +132,54 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
               <tbody>
                 <tr>
                   <th scope="row">Mean sunlight</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{(e.metrics.meanIllumFraction * 100).toFixed(1)}%</td>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.meanIllumFraction * 100, 1, '%')}</td>
                   ))}
                 </tr>
                 <tr>
                   <th scope="row">Sunlit hours</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{e.metrics.sunlitHours.toFixed(0)} h</td>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.sunlitHours, 0, ' h')}</td>
                   ))}
                 </tr>
                 <tr>
                   <th scope="row">Longest shadow</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{e.metrics.maxContinuousShadowHours.toFixed(1)} h</td>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.maxContinuousShadowHours, 1, ' h')}</td>
                   ))}
                 </tr>
                 <tr>
-                  <th scope="row">Direct Earth (DTE)</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{e.metrics.dteDutyCyclePct.toFixed(1)}%</td>
+                  <th scope="row">Direct Earth visibility</th>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.dteDutyCyclePct, 1, '%')}</td>
                   ))}
                 </tr>
                 <tr>
-                  <th scope="row">Combined link</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{e.metrics.combinedDutyCyclePct.toFixed(1)}%</td>
+                  <th scope="row">Earth + modelled relay visibility</th>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.combinedDutyCyclePct, 1, '%')}</td>
                   ))}
                 </tr>
                 <tr>
-                  <th scope="row">Longest blackout</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{e.metrics.maxBlackoutCombinedHours.toFixed(1)} h</td>
+                  <th scope="row">Longest visibility gap</th>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.maxBlackoutCombinedHours, 1, ' h')}</td>
                   ))}
                 </tr>
                 <tr>
                   <th scope="row">Slope (limit &lt; {clpsLimit}°)</th>
-                  {entries.map((e) => (
+                  {entries.map((e, idx) => (
                     <td key={e.label}>
-                      {e.analysis.terrain.slopeDeg.toFixed(1)}°{' '}
-                      {e.analysis.terrain.slopeDeg < clpsLimit ? '(<15°)' : '(≥15°)'}
+                      {hasTerrain(idx) && Number.isFinite(e.analysis.terrain.slopeDeg)
+                        ? `${e.analysis.terrain.slopeDeg.toFixed(1)}° (${e.analysis.terrain.slopeDeg < clpsLimit ? '<' : '≥'}${clpsLimit}°)`
+                        : '—'}
                     </td>
                   ))}
                 </tr>
                 <tr>
-                  <th scope="row">Energy ({config.panelAreaM2.toFixed(1)} m²)</th>
-                  {entries.map((e) => (
-                    <td key={e.label}>{(e.metrics.energyCycleWh / 1000).toFixed(1)} kWh</td>
+                  <th scope="row">Estimated solar energy ({config.panelAreaM2.toFixed(1)} m²)</th>
+                  {entries.map((e, idx) => (
+                    <td key={e.label}>{metric(idx, e.metrics.energyCycleWh / 1000, 1, ' kWh')}</td>
                   ))}
                 </tr>
               </tbody>
@@ -188,46 +194,44 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
             aria-expanded={showAdvanced}
             onClick={() => setShowAdvanced((v) => !v)}
           >
-            <span>3. Advanced options (5×5 local grid, solar array, ELFO, sources)</span>
+            <span>3. Assumptions &amp; sources</span>
             <span aria-hidden="true">{showAdvanced ? '▲' : '▼'}</span>
           </button>
 
           {showAdvanced && (
             <div className="advanced-body">
               <div className="adv-block">
-                <h4>Coordinates &amp; LOLA Elevation</h4>
-                {entries.map((e) => (
-                  <p key={e.label} className="mono-line">
-                    <strong>
-                      {e.label} ({e.site.name}):
-                    </strong>{' '}
-                    {e.analysis.terrain.latitudeDeg.toFixed(3)}°,{' '}
-                    {e.analysis.terrain.longitudeEastDeg.toFixed(3)}° E | Elev{' '}
-                    {e.analysis.terrain.elevationM.toFixed(0)} m | PSR{' '}
-                    {e.analysis.terrain.isPsr ? 'INSIDE (PSR)' : `${e.analysis.terrain.psrDistanceM.toFixed(0)} m`}
+                <h4>Coordinates</h4>
+                {entries.map((e, idx) => (
+                  <p key={e.label} className="condition-coordinate">
+                    <strong>{e.label} ({e.site.name}):</strong>{' '}
+                    {hasTerrain(idx) ? (
+                      <>
+                        {e.analysis.terrain.latitudeDeg.toFixed(3)}°,{' '}
+                        {e.analysis.terrain.longitudeEastDeg.toFixed(3)}° E. Elevation{' '}
+                        {e.analysis.terrain.elevationM.toFixed(0)} m. Permanently shadowed region:{' '}
+                        {e.analysis.terrain.isPsr ? 'inside' : `${e.analysis.terrain.psrDistanceM.toFixed(0)} m away`}.
+                      </>
+                    ) : (
+                      <>
+                        {e.site.center.latitude_deg.toFixed(3)}°,{' '}
+                        {e.site.center.longitude_east_deg.toFixed(3)}° E (approximate model).
+                        {' '}Elevation and permanently shadowed regions are not calculated.
+                      </>
+                    )}
                   </p>
                 ))}
               </div>
 
               <div className="adv-block">
-                <div className="section-title-row">
-                  <h4>5×5 Local Grid (±500 m at Site {activeEntry.label})</h4>
-                  <button
-                    type="button"
-                    className="btn-link-sm"
-                    onClick={() => onChangeOffset(activeSlotIdx, 0, 0)}
-                  >
-                    Center (0, 0)
-                  </button>
-                </div>
-
                 {entries.length > 1 && (
-                  <div className="chip-row" role="group" aria-label="Select site for 5x5 local grid">
+                  <div className="chip-row" role="group" aria-label="Select site for assumptions and sources">
                     {entries.map((e, idx) => (
                       <button
                         key={e.label}
                         type="button"
-                        className={`btn-filter-chip ${idx === activeSlotIdx ? 'active' : ''}`}
+                        className={`btn-filter-chip ${idx === activeIndex ? 'active' : ''}`}
+                        aria-pressed={idx === activeIndex}
                         onClick={() => onSelectActiveSlot(idx)}
                       >
                         {e.meta.glyph} {e.label}
@@ -236,6 +240,17 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
                   </div>
                 )}
 
+                {activeHasTerrain ? <>
+                <div className="section-title-row">
+                  <h4>Local grid (±500 m at Site {activeEntry.label})</h4>
+                  <button
+                    type="button"
+                    className="btn-link-sm"
+                    onClick={() => onChangeOffset(activeIndex, 0, 0)}
+                  >
+                    Center (0, 0)
+                  </button>
+                </div>
                 <label className="field-block">
                   <span>East–West offset (dx): {activeEntry.analysis.terrain.dxM.toFixed(0)} m</span>
                   <input
@@ -246,7 +261,7 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
                     step={0.1}
                     value={activeEntry.slot.offsetXNorm}
                     onChange={(e) =>
-                      onChangeOffset(activeSlotIdx, Number(e.target.value), activeEntry.slot.offsetYNorm)
+                      onChangeOffset(activeIndex, Number(e.target.value), activeEntry.slot.offsetYNorm)
                     }
                   />
                 </label>
@@ -260,14 +275,21 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
                     step={0.1}
                     value={activeEntry.slot.offsetYNorm}
                     onChange={(e) =>
-                      onChangeOffset(activeSlotIdx, activeEntry.slot.offsetXNorm, Number(e.target.value))
+                      onChangeOffset(activeIndex, activeEntry.slot.offsetXNorm, Number(e.target.value))
                     }
                   />
                 </label>
+                </> : <p className="condition-source-note">Local terrain offsets are not calculated for this point.</p>}
               </div>
 
+              {activeHasTerrain && (
               <div className="adv-block">
-                <h4>Power &amp; ELFO Relay</h4>
+                <h4>Solar energy &amp; relay assumptions</h4>
+                <p className="condition-source-note">
+                  Estimated solar generation, before storage and system losses. Panel efficiency:{' '}
+                  {(config.panelEfficiency * 100).toFixed(0)}%. Relay visibility uses a modelled constellation,
+                  not an operating communication service or a checked radio link.
+                </p>
                 <label className="toggle-control">
                   <input
                     type="checkbox"
@@ -276,7 +298,7 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
                       onChangeConfig({ ...config, relayEnabled: e.target.checked })
                     }
                   />
-                  <span>Enable ELFO Relay Constellation</span>
+                  <span>Include modelled ELFO relays</span>
                 </label>
 
                 <label className="field-block">
@@ -309,19 +331,34 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
                   />
                 </label>
               </div>
+              )}
 
               <div className="adv-block">
-                <h4>NASA Sources &amp; JPL Horizons Cross-Validation</h4>
-                <p className="muted-caption">
-                  DEM: {provenance.dem_product.product_id} ({provenance.dem_product.resolution_m} m/px,{' '}
-                  {(provenance.dem_product.ray_max_distance_m / 1000).toFixed(0)} km ray-march). Ephemeris:{' '}
+                <h4>Sources &amp; checks</h4>
+                {activeHasTerrain ? <>
+                <p className="condition-source-note">
+                  Terrain model: {provenance.dem_product.product_id} ({provenance.dem_product.resolution_m} m/pixel,{' '}
+                  {(provenance.dem_product.ray_max_distance_m / 1000).toFixed(0)} km horizon search). Body positions:{' '}
                   {provenance.ephemeris.engine} in {provenance.ephemeris.frame} ({provenance.ephemeris.correction}).
                 </p>
-                <p className="muted-caption">
-                  JPL Horizons Cross-Validation ({provenance.horizons_validation.status}): max Sun error{' '}
-                  {provenance.horizons_validation.max_sun_el_diff_deg ?? '0.00002'}° and Earth{' '}
-                  {provenance.horizons_validation.max_earth_el_diff_deg ?? '0.00004'}°.
+                <p className="condition-source-note">
+                  Archived JPL Horizons comparison ({provenance.horizons_validation.status}): maximum Sun elevation difference{' '}
+                  {validationError(provenance.horizons_validation.max_sun_el_diff_deg)}; Earth{' '}
+                  {validationError(provenance.horizons_validation.max_earth_el_diff_deg)}.
+                  {' '}The archived comparison covers 16 epochs at one location. It does not validate all sites,
+                  terrain, energy estimates or radio links.
                 </p>
+                <details className="condition-source-details">
+                  <summary>Dataset notes</summary>
+                  <ul>
+                    {[...new Set([...provenance.horizons_validation.notes, ...provenance.limitations])]
+                      .map((note) => <li key={note}>{note}</li>)}
+                  </ul>
+                </details>
+                </> : <p className="condition-source-note">
+                  {activeReadout?.modelNote ?? 'Model details are not available for this point.'}
+                  {' '}The terrain dataset and its archived validation do not apply to this point.
+                </p>}
               </div>
             </div>
           )}

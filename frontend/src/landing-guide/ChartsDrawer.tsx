@@ -5,6 +5,7 @@ import { EvaluatedSlotEntry, formatUtcShort, WindowSlice } from './state';
 
 interface ChartsDrawerProps {
   entries: EvaluatedSlotEntry[];
+  terrainSiteIds: readonly string[];
   activeSlotIdx: number;
   horizonAzDeg: number[];
   missionWindow: MissionWindow;
@@ -54,7 +55,45 @@ function buildCommsSegments(
   return segments;
 }
 
-export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
+export const ChartsDrawer: React.FC<ChartsDrawerProps> = (props) => {
+  const { entries, terrainSiteIds, activeSlotIdx, onClose } = props;
+  const terrainIds = new Set(terrainSiteIds);
+  const terrainEntries = entries.filter((entry) => terrainIds.has(entry.site.id));
+  const activeEntry = entries[activeSlotIdx];
+  const filteredActiveIdx = terrainEntries.findIndex(
+    (entry) => entry.site.id === activeEntry?.site.id && entry.label === activeEntry?.label,
+  );
+  const excludedFreePoints = terrainEntries.length !== entries.length;
+
+  if (terrainEntries.length === 0) {
+    return (
+      <aside className="side-drawer drawer-left" aria-label="Comparison charts drawer">
+        <div className="drawer-header">
+          <div><h2>Charts</h2></div>
+          <div className="drawer-head-actions">
+            <button type="button" className="btn-close-panel" onClick={onClose} aria-label="Close charts panel">
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="drawer-scroll">
+          <p>These charts need a cataloged terrain horizon. See Data for this point's approximate geometry.</p>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <TerrainCharts
+      {...props}
+      entries={terrainEntries}
+      activeSlotIdx={Math.max(0, filteredActiveIdx)}
+      excludedFreePoints={excludedFreePoints}
+    />
+  );
+};
+
+const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean }> = ({
   entries,
   activeSlotIdx,
   horizonAzDeg,
@@ -64,6 +103,7 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
   config,
   onSelectEpoch,
   onClose,
+  excludedFreePoints,
 }) => {
   const [tableMode, setTableMode] = useState(false);
 
@@ -176,9 +216,11 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
   }, [slice.startIdx, slice.endIdx, slice.totalHours, epochIdx]);
 
   const linkLabel = (ep: LiveSiteAnalysis['epochStates'][number]) => {
-    if (ep.dteVisible) return 'DTE (Earth)';
-    if (config.relayEnabled && ep.elfoConstellationVisible) return 'ELFO Relay';
-    return 'Blackout';
+    if (ep.dteVisible) return config.dteMarginMode === 'full_disk'
+      ? 'Whole-Earth criterion met'
+      : 'Earth-center criterion met';
+    if (config.relayEnabled && ep.elfoConstellationVisible) return 'Relay model criterion met';
+    return config.relayEnabled ? 'Neither criterion met' : 'Earth criterion not met';
   };
 
   const curSunX = azToX(primaryEntry.site.sky_series.sun_az_deg[epochIdx]);
@@ -216,6 +258,11 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
       </div>
 
       <div className="drawer-scroll">
+        {excludedFreePoints && (
+          <p className="muted-caption">
+            Free points are omitted: these charts need a cataloged terrain horizon. See Data for approximate point geometry.
+          </p>
+        )}
         <div className="legend-strip" aria-label="Site line styles">
           {entries.map((entry) => (
             <span key={entry.label} className="legend-tag">
@@ -226,10 +273,11 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
 
         {!tableMode ? (
           <div className="charts-stack">
-            <section className="chart-card" aria-label="Solar illumination curve">
+            <section className="chart-card" aria-label="Visible solar disk fraction">
               <div className="chart-head">
-                <h3>1. Solar Illumination (%)</h3>
+                <h3>1. Visible Sun disk (%)</h3>
                 <span className="chart-stat">
+                  Mean{' '}
                   {entries
                     .map((e) => `${e.label}: ${(e.metrics.meanIllumFraction * 100).toFixed(1)}%`)
                     .join(' | ')}
@@ -240,7 +288,7 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
                 className="chart-svg"
                 onClick={handleSvgClick}
                 role="img"
-                aria-label={`Solar illumination curve for ${entries.map((e) => e.site.name).join(', ')}`}
+                aria-label={`Visible solar disk fraction for ${entries.map((e) => e.site.name).join(', ')}`}
               >
                 <rect x={left} y={solarTop} width={plotW} height={solarH} fill="#09090b" stroke="#27272a" />
                 {[0, 0.5, 1].map((frac) => {
@@ -272,16 +320,17 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
                   +{slice.totalHours}h
                 </text>
               </svg>
+              <p className="muted-caption">Visible disk fraction, not panel efficiency or electrical output.</p>
             </section>
 
-            <section className="chart-card" aria-label="Communications and blackouts timeline">
+            <section className="chart-card" aria-label="Modelled visibility timeline">
               <div className="chart-head">
-                <h3>2. Comms &amp; Blackouts</h3>
+                <h3>2. Modelled visibility</h3>
                 <span className="chart-stat">
                   {entries
                     .map(
                       (e) =>
-                        `${e.label}: ${e.metrics.blackoutCountCombined} blk (max ${e.metrics.maxBlackoutCombinedHours.toFixed(0)}h)`,
+                        `${e.label}: ${e.metrics.blackoutCountCombined} gaps (max ${e.metrics.maxBlackoutCombinedHours.toFixed(0)}h)`,
                     )
                     .join(' | ')}
                 </span>
@@ -291,7 +340,7 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
                 className="chart-svg"
                 onClick={handleSvgClick}
                 role="img"
-                aria-label="Timeline of Direct-to-Earth, ELFO Relay, and communications blackouts"
+                aria-label="Timeline of Earth criterion, relay model criterion, and unmet visibility criteria"
               >
                 {commsTimelineRows.map(({ entry, segments }, rowIdx) => {
                   const yTop = 10 + rowIdx * 28;
@@ -331,24 +380,25 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
                 />
               </svg>
               <div className="comms-legend">
-                <span><i className="swatch swatch-dte" /> Direct Earth (DTE)</span>
-                <span><i className="swatch swatch-elfo" /> Relay (ELFO)</span>
-                <span><i className="swatch swatch-blk" /> Blackout</span>
+                <span><i className="swatch swatch-dte" /> {config.dteMarginMode === 'full_disk' ? 'Whole Earth clears terrain' : 'Earth center clears terrain'}</span>
+                <span><i className="swatch swatch-elfo" /> {config.relayEnabled ? 'ELFO model criterion' : 'Relay model off'}</span>
+                <span><i className="swatch swatch-blk" /> {config.relayEnabled ? 'Neither criterion met' : 'Earth criterion not met'}</span>
               </div>
+              <p className="muted-caption">Visibility criteria, not a working radio link. Gaps are not service outages.</p>
             </section>
 
             <section className="chart-card" aria-label="360 degree sky and terrain horizon chart">
               <div className="chart-head">
                 <h3>3. Sky &amp; 360° Horizon ({primaryEntry.label})</h3>
                 <span className="chart-stat">
-                  Mask +{config.antennaMaskDeg.toFixed(0)}°
+                  {config.relayEnabled ? `Assumed relay mask +${config.antennaMaskDeg.toFixed(0)}°` : 'Relay model off'}
                 </span>
               </div>
               <svg
                 viewBox={`0 0 ${w} ${hSky}`}
                 className="chart-svg"
                 role="img"
-                aria-label="360-degree terrain ridge horizon with Sun, Earth, and ELFO-1 track"
+                aria-label={`360-degree terrain horizon for ${primaryEntry.site.name}, with schematic Sun and Earth center markers${config.relayEnabled ? ' and modelled ELFO position' : ''}`}
               >
                 <rect x={left} y={skyTop} width={plotW} height={skyH} fill="#09090b" stroke="#27272a" />
                 {[0, 10, 20].map((yv) => {
@@ -439,21 +489,23 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
                   />
                 )}
               </svg>
+              <p className="muted-caption">Sun and Earth markers show centers; disk sizes are schematic.</p>
+              {config.relayEnabled && <p className="muted-caption">The assumed relay mask is above terrain. It is not the terrain horizon or the Earth-view criterion.</p>}
             </section>
           </div>
         ) : (
           <div className="accessible-table-wrap">
             <table className="data-table">
               <caption>
-                Hourly solar illumination and communications across the selected window ({slice.totalHours}h)
+                Sampled visible Sun disk and modelled visibility criteria across the selected window ({slice.totalHours}h)
               </caption>
               <thead>
                 <tr>
                   <th scope="col">UTC Time</th>
                   {entries.map((e) => (
                     <React.Fragment key={e.label}>
-                      <th scope="col">{e.label}: Sun</th>
-                      <th scope="col">{e.label}: Link</th>
+                      <th scope="col">{e.label}: Visible Sun disk (%)</th>
+                      <th scope="col">{e.label}: Modelled visibility state</th>
                     </React.Fragment>
                   ))}
                   <th scope="col">Jump</th>
@@ -464,7 +516,7 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = ({
                   const isCurrent = idx === epochIdx;
                   return (
                     <tr key={idx} className={isCurrent ? 'row-active' : ''}>
-                      <td>{formatUtcShort(missionWindow.timestamps_utc[idx]).replace(' UTC', '')}</td>
+                      <td>{formatUtcShort(missionWindow.timestamps_utc[idx])}</td>
                       {entries.map((e) => {
                         const ep = e.analysis.epochStates[idx];
                         return (

@@ -246,17 +246,23 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     expect(screen.getByRole('button', { name: /Look Earth/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /^Data/i }));
-    expect(screen.getByText(/Comparing 3 lunar sites/i)).toBeInTheDocument();
-    expect(screen.getByText(/Where am I looking\?/i)).toBeInTheDocument();
+    const dataPanel = screen.getByRole('complementary', { name: /Site metrics and scientific provenance drawer/i });
+    expect(within(dataPanel).getByRole('region', { name: 'Sun reading' })).toBeInTheDocument();
+    expect(within(dataPanel).getByRole('region', { name: 'Earth reading' })).toBeInTheDocument();
+    // A free point retains a selected slot, but never inherits catalogued
+    // terrain/energy metrics just because a visual scaffold was generated.
+    const sunlightRow = within(dataPanel).getByRole('row', { name: /^Mean sunlight/i });
+    expect(within(sunlightRow).getAllByRole('cell')).toHaveLength(3);
+    expect(within(sunlightRow).getAllByRole('cell')[0]).toHaveTextContent(/^—$/);
 
-    fireEvent.click(screen.getByRole('button', { name: /What does this mean\?/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Glossary$/i }));
     expect(screen.getByRole('region', { name: /Glossary of lunar concepts/i })).toBeInTheDocument();
 
-    const advToggle = screen.getByRole('button', { name: /Advanced options/i });
+    const advToggle = screen.getByRole('button', { name: /Assumptions & sources/i });
     expect(advToggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(advToggle);
     expect(advToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText(/NASA Sources & JPL Horizons Cross-Validation/i)).toBeInTheDocument();
+    expect(screen.getByText(/16 epochs at one location/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Single site only/i }));
     expect(screen.getByRole('button', { name: /Sites \(1\)/i })).toBeInTheDocument();
@@ -267,7 +273,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
 
     fireEvent.click(screen.getByRole('button', { name: /^Charts$/i }));
-    expect(screen.getByRole('img', { name: /Solar illumination curve/i })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Visible solar disk fraction/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /View table/i }));
     expect(screen.getByRole('table')).toBeInTheDocument();
 

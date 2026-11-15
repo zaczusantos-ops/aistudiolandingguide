@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import rawDataset from './data/south_pole_precomputed.v1.json';
 import { parseNavigatorDataset } from './contract';
 import { DEFAULT_CONFIG, evaluateLiveSite } from './navigator/math';
+import { createGeometrySite } from './explorer/geometry';
 import { EngineeringConfig, LandingSiteEntry, NavigatorDatasetV1 } from './navigator/types';
 import { AstronautViewport } from './landing-guide/AstronautViewport';
 import { ChartsDrawer } from './landing-guide/ChartsDrawer';
@@ -37,6 +38,7 @@ import {
   ViewportMode,
 } from './landing-guide/state';
 import { TimePopover } from './landing-guide/TimePopover';
+import { buildSiteReadout } from './landing-guide/siteReadings';
 
 const defaultDataset: NavigatorDatasetV1 = parseNavigatorDataset(rawDataset);
 
@@ -180,6 +182,18 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     [entries, clampedEpochIdx, currentUtc, slice, config.relayEnabled],
   );
 
+  const readouts = useMemo(
+    () => entries.map((entry) => buildSiteReadout({
+      dataset,
+      site: entry.site,
+      terrainHorizonDeg: entry.analysis.terrain.horizonElevDeg,
+      epochIdx: clampedEpochIdx,
+      config,
+    })),
+    [entries, dataset, clampedEpochIdx, config],
+  );
+  const terrainSiteIds = useMemo(() => dataset.sites.map(site => site.id), [dataset.sites]);
+
   const handleStart = (siteId?: string) => {
     if (siteId) {
       setSlots((prev) => setSiteSlotAt(prev, 0, siteId));
@@ -216,6 +230,13 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     slotIdx: number,
     atlas?: LunarAtlasData,
   ) => {
+    let geometry;
+    try {
+      geometry = createGeometrySite(dataset, latDeg, lonEastDeg);
+    } catch {
+      setCoverageNotice('This point could not be assessed. Choose valid lunar coordinates.');
+      return;
+    }
     const effectiveAtlas =
       atlas ?? getLoadedRealAtlasSync() ?? buildLunarAtlasData(dataset.sites, 256, 128);
     const customSite = createCustomLandingSite({
@@ -226,15 +247,17 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
       horizonAzDeg: dataset.horizon_azimuths_deg,
       missionWindow: dataset.mission_window,
     });
+    // Keep the visual surface scaffold for the existing astronaut view, but
+    // use finite-range spherical sky geometry in the selected point's tracks.
+    // Orbital readings and charts never treat this display atlas as a DEM.
+    customSite.center.latitude_deg = geometry.center.latitude_deg;
+    customSite.center.longitude_east_deg = geometry.center.longitude_east_deg;
+    customSite.sky_series = { ...customSite.sky_series, ...geometry.sky_series };
     setCustomSites((prev) => ({ ...prev, [customSite.id]: customSite }));
     setSlots((prev) => setSiteSlotAt(prev, slotIdx, customSite.id));
-    if (latDeg > -78) {
-      setCoverageNotice(
-        `Unvisited pin dropped at ${customSite.name}: 360° horizon ray-marched on global LOLA DEM with SPICE Sun/Earth tracks (polar ELFO relay applies inside 80°S–90°S).`,
-      );
-    } else {
-      setCoverageNotice(null);
-    }
+    setCoverageNotice(
+      `Unvisited pin dropped at ${customSite.name}. Sky geometry is approximate; local terrain obstruction, energy and relay availability are not assessed. Rendered relief is visual context.`,
+    );
   };
 
   const handleAddSlot = () => {
@@ -458,7 +481,6 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
             <div className="ab-floating-dock" aria-label="Selected lunar sites">
               <div className="ab-dock-row">
                 {entries.map((entry, idx) => {
-                  const ep = entry.analysis.epochStates[clampedEpochIdx];
                   const isArmed = idx === safeActiveIdx;
                   return (
                     <div
@@ -483,9 +505,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                         <div className="ab-card-text">
                           <strong>{entry.site.name}</strong>
                           <span>
-                            {Math.abs(entry.analysis.terrain.latitudeDeg).toFixed(2)}°{' '}
-                            {entry.analysis.terrain.latitudeDeg < 0 ? 'S' : 'N'} · Sun{' '}
-                            {(ep.fIllum * 100).toFixed(0)}%
+                            {readouts[idx]?.summary ?? 'Conditions not assessed'}
                           </span>
                         </div>
                       </button>
@@ -634,6 +654,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
           {chartsOpen && (
             <ChartsDrawer
               entries={entries}
+              terrainSiteIds={terrainSiteIds}
               activeSlotIdx={safeActiveIdx}
               horizonAzDeg={dataset.horizon_azimuths_deg}
               missionWindow={dataset.mission_window}
@@ -651,6 +672,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
           {dataOpen && (
             <DataDrawer
               entries={entries}
+              readouts={readouts}
               activeSlotIdx={safeActiveIdx}
               onSelectActiveSlot={setActiveSlotIdx}
               summary={plainSummary}
