@@ -15,7 +15,7 @@ import {
   SurfaceMode,
   TOPO_LEGEND_STOPS,
 } from './landing-guide/lunarTerrainEngine';
-import { LunarViewport } from './landing-guide/LunarViewport';
+import { OriginalLunarViewport as LunarViewport } from './landing-guide/OriginalLunarViewport';
 import { SelectionPopover } from './landing-guide/SelectionPopover';
 import {
   addSiteSlot,

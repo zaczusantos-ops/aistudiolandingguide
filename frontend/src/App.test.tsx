@@ -171,7 +171,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
 
     expect(screen.getByRole('heading', { name: /Landing\s*Guide\./i })).toBeInTheDocument();
     expect(screen.getByRole('status', { name: '3D view status' })).toHaveTextContent(
-      'Static NASA image',
+      '3D view unavailable',
     );
     expect(screen.queryByRole('button', { name: /How it works/i })).not.toBeInTheDocument();
 
