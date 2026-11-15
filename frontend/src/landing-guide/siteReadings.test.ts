@@ -21,8 +21,10 @@ describe('site-specific explanations and capability boundary', () => {
     expect(later.earth.label).toBe('Whole Earth in view');
     expect(first.timestamp).toBe('2026-11-15T00:00:00Z');
     expect(later.timestamp).toBe('2026-11-22T00:00:00Z');
-    expect(later.communicationNote).toContain('a working radio link is not assessed');
+    expect(later.communicationNote).toContain('radio performance are not assessed');
     expect(first.energyNote).toContain('depends on');
+    expect(first.jointVisibilitySatisfied).toBe(false);
+    expect(later.jointVisibilitySatisfied).toBe(true);
   });
 
   it('free points bypass stale display horizons and borrowed sky tracks', () => {
@@ -42,6 +44,7 @@ describe('site-specific explanations and capability boundary', () => {
     expect(result.sun.angle).toContain('geometric horizon');
     expect(result.modelNote).toContain('Local obstruction, PSR, power and relay availability are not calculated');
     expect(result.modelNote).not.toMatch(/80 m|verified|0\.0000/);
+    expect(result.jointVisibilitySatisfied).toBeNull();
   });
 
   it('does not turn a missing named horizon or time sample into a night or a communications failure', () => {

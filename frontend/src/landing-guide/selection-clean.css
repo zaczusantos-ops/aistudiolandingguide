@@ -1,0 +1,98 @@
+.selection-clean .popover-head {
+  align-items: center;
+}
+
+.selection-clean .selection-coordinate-disclosure {
+  border: 0;
+  padding: 0;
+}
+
+.selection-clean .selection-coordinate-disclosure > summary {
+  padding: 6px 0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.selection-clean .selection-coordinate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.selection-clean .selection-coordinate-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+
+.selection-clean .selection-error {
+  margin: 0;
+  color: var(--ink-white);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.selection-clean .selection-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.selection-clean .selection-place-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selection-clean .selection-place-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--ink-soft);
+  text-align: left;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.selection-clean .selection-place-pick[aria-pressed='true'] {
+  color: var(--ink-white);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.selection-clean .selection-place-label {
+  font-family: var(--font-mono);
+}
+
+.selection-clean .selection-place-remove {
+  min-width: 40px;
+  min-height: 40px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.selection-clean .selection-comparison-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.selection-clean :is(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--ink-white);
+  outline-offset: 3px;
+}
+
+@media (max-width: 420px) {
+  .selection-clean .selection-coordinate-fields {
+    grid-template-columns: 1fr;
+  }
+}

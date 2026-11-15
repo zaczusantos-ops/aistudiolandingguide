@@ -11,6 +11,7 @@ import {
   evaluateWindowMetrics,
   SLOT_META,
   SlotLabel,
+  WindowSlice,
 } from './state';
 
 const dataset = parseNavigatorDataset(datasetJson);
@@ -21,6 +22,7 @@ function namedEntry(
   siteIndex: number,
   label: SlotLabel,
   config: EngineeringConfig = DEFAULT_CONFIG,
+  windowSlice: WindowSlice = slice,
 ): EvaluatedSlotEntry {
   const site = dataset.sites[siteIndex];
   const analysis = evaluateLiveSite(
@@ -32,7 +34,7 @@ function namedEntry(
     site,
     slot: { siteId: site.id, offsetXNorm: 0, offsetYNorm: 0 },
     analysis,
-    metrics: evaluateWindowMetrics(analysis, dataset.mission_window, config, slice),
+    metrics: evaluateWindowMetrics(analysis, dataset.mission_window, config, windowSlice),
   };
 }
 
@@ -51,6 +53,8 @@ function show(
   entries: EvaluatedSlotEntry[],
   activeSlotIdx = 0,
   config: EngineeringConfig = DEFAULT_CONFIG,
+  windowSlice: WindowSlice = slice,
+  epochIdx = windowSlice.startIdx,
 ) {
   const onClose = vi.fn();
   const onSelectEpoch = vi.fn();
@@ -61,8 +65,8 @@ function show(
       activeSlotIdx={activeSlotIdx}
       horizonAzDeg={dataset.horizon_azimuths_deg}
       missionWindow={dataset.mission_window}
-      slice={slice}
-      epochIdx={0}
+      slice={windowSlice}
+      epochIdx={epochIdx}
       config={config}
       onSelectEpoch={onSelectEpoch}
       onClose={onClose}
@@ -78,7 +82,7 @@ describe('cataloged-terrain charts', () => {
     const named = namedEntry(0, 'B');
     show([freePoint(), named]);
 
-    expect(screen.getByText(/Free points are omitted/)).toHaveTextContent(/See Data/);
+    expect(screen.getByText(/Free points are omitted/)).toHaveTextContent(/See Conditions/);
     expect(screen.queryByText('Uncataloged point')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Visible solar disk fraction/ })).toHaveAccessibleName(
       `Visible solar disk fraction for ${named.site.name}`,
@@ -95,13 +99,13 @@ describe('cataloged-terrain charts', () => {
   it('shows a closeable explanation, with no charts, table or invented numbers, when only free points exist', () => {
     const { container, onClose } = show([freePoint()]);
 
-    expect(screen.getByRole('heading', { name: 'Charts' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Over time' })).toBeInTheDocument();
     expect(screen.getByText(/These charts need a cataloged terrain horizon/)).toHaveTextContent(/approximate geometry/);
     expect(container.querySelector('svg')).toBeNull();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View table' })).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent(/\d|%|W\/m|Blackout/);
-    fireEvent.click(screen.getByRole('button', { name: 'Close charts panel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close over time panel' }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -151,7 +155,7 @@ describe('cataloged-terrain charts', () => {
     expect(onSelectEpoch).toHaveBeenCalledWith(1);
     fireEvent.click(screen.getByRole('button', { name: 'View charts' }));
     expect(screen.getByRole('button', { name: 'View table' })).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(screen.getByRole('button', { name: 'Close charts panel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close over time panel' }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -180,5 +184,112 @@ describe('cataloged-terrain charts', () => {
     rerender(<ChartsDrawer {...props} entries={[named]} />);
     expect(screen.getByRole('button', { name: 'View table' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('img', { name: /Visible solar disk fraction/ })).toBeInTheDocument();
+  });
+});
+
+
+describe('sampled spans and single instants', () => {
+  it.each([[683, '<1%'], [386, '>99%']] as const)(
+    'preserves partial visibility at real Mons Mouton sample %i in instant and period tables',
+    (epochIdx, percentage) => {
+      const instant: WindowSlice = {
+        startIdx: epochIdx, endIdx: epochIdx, epochCount: 1, totalHours: 0, clampedByEnd: false,
+      };
+      const entry = namedEntry(2, 'A', DEFAULT_CONFIG, instant);
+      expect(entry.analysis.epochStates[epochIdx].fIllum).toBeGreaterThan(0);
+      expect(entry.analysis.epochStates[epochIdx].fIllum).toBeLessThan(1);
+      const { rerender } = show([entry], 0, DEFAULT_CONFIG, instant);
+      expect(within(screen.getByRole('table')).getByText(percentage)).toBeInTheDocument();
+
+      const period = computeWindowSlice(dataset.mission_window.timestamps_utc, epochIdx, 1);
+      rerender(<ChartsDrawer
+        entries={[namedEntry(2, 'A', DEFAULT_CONFIG, period)]}
+        terrainSiteIds={terrainSiteIds}
+        activeSlotIdx={0}
+        horizonAzDeg={dataset.horizon_azimuths_deg}
+        missionWindow={dataset.mission_window}
+        slice={period}
+        epochIdx={epochIdx}
+        config={DEFAULT_CONFIG}
+        onSelectEpoch={vi.fn()}
+        onClose={vi.fn()}
+      />);
+      fireEvent.click(screen.getByRole('button', { name: 'View table' }));
+      const firstDataRow = within(screen.getByRole('table')).getAllByRole('row')[1];
+      expect(within(firstDataRow).getByText(percentage)).toBeInTheDocument();
+    },
+  );
+
+  it('keeps unavailable period statistics explicit instead of printing NaN or replacing them with zero', () => {
+    const entry = namedEntry(0, 'A');
+    entry.metrics = { ...entry.metrics, meanIllumFraction: Number.NaN, maxBlackoutCombinedHours: Number.NaN };
+    const { container } = show([entry]);
+    expect(screen.getByText(/A: longest sampled gap not assessed/)).toBeInTheDocument();
+    expect(screen.getByText(/Hourly sample mean A: —/)).toBeInTheDocument();
+    expect(container).not.toHaveTextContent('NaN');
+  });
+
+  it('renders only the final saved instant without reading period metrics or inventing an hour', () => {
+    const last = dataset.mission_window.timestamps_utc.length - 1;
+    const instant = computeWindowSlice(dataset.mission_window.timestamps_utc, last, 1);
+    const entry = namedEntry(0, 'A', DEFAULT_CONFIG, instant);
+    Object.defineProperty(entry, 'metrics', {
+      get() { throw new Error('A single instant must not consume period metrics'); },
+    });
+    const { container, onClose } = show([entry], 0, DEFAULT_CONFIG, instant, last);
+
+    expect(screen.getByRole('complementary', { name: 'Conditions over time' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Over time' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Only one saved sample is available');
+    expect(screen.getByRole('status')).toHaveTextContent('duration, energy and continuous visibility are not assessed');
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('2026-12-15 00:00 UTC')).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
+    expect(within(table).getByRole('columnheader', { name: 'A: Visible Sun disk (%)' })).toBeInTheDocument();
+    expect(container.querySelector('svg')).toBeNull();
+    expect(container).not.toHaveTextContent(/sampled span|sample mean|longest sampled gap|\+\d+h|\bWh\b|\bkWh\b/i);
+    expect(screen.queryByRole('button', { name: 'View table' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Jump to epoch/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close over time panel' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps two endpoint samples as a one-hour sampled span, with both table rows', () => {
+    const penultimate = dataset.mission_window.timestamps_utc.length - 2;
+    const oneHour = computeWindowSlice(dataset.mission_window.timestamps_utc, penultimate, 1);
+    const entry = namedEntry(0, 'A', DEFAULT_CONFIG, oneHour);
+    show([entry], 0, DEFAULT_CONFIG, oneHour);
+
+    expect(screen.getByText('1 h sampled span')).toBeInTheDocument();
+    expect(screen.getByText(/Hourly sample mean/)).toBeInTheDocument();
+    expect(screen.getByText(/Hourly criteria, not exact transition times/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View table' }));
+    const table = screen.getByRole('table');
+    expect(table).toHaveAccessibleName(/1 h sampled span/);
+    expect(within(table).getAllByRole('row')).toHaveLength(3);
+    expect(within(table).getByText('2026-12-14 23:00 UTC')).toBeInTheDocument();
+    expect(within(table).getByText('2026-12-15 00:00 UTC')).toBeInTheDocument();
+  });
+
+  it('can enter and leave a single instant while excluding a free point before consuming it', () => {
+    const last = dataset.mission_window.timestamps_utc.length - 1;
+    const instant = computeWindowSlice(dataset.mission_window.timestamps_utc, last, 1);
+    const entry = namedEntry(0, 'B');
+    const props = {
+      entries: [freePoint(), entry], terrainSiteIds, activeSlotIdx: 1,
+      horizonAzDeg: dataset.horizon_azimuths_deg, missionWindow: dataset.mission_window,
+      config: DEFAULT_CONFIG, onSelectEpoch: vi.fn(), onClose: vi.fn(),
+    };
+    const { rerender } = render(<ChartsDrawer {...props} slice={slice} epochIdx={0} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View table' }));
+    rerender(<ChartsDrawer {...props} slice={instant} epochIdx={last} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Only one saved sample');
+    expect(screen.getByText(/Free points are omitted/)).toHaveTextContent('See Conditions');
+    expect(screen.queryByText('Uncataloged point')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View charts' })).not.toBeInTheDocument();
+    rerender(<ChartsDrawer {...props} slice={slice} epochIdx={0} />);
+    expect(screen.getByRole('img', { name: /Visible solar disk fraction/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View table' })).toHaveAttribute('aria-pressed', 'false');
   });
 });

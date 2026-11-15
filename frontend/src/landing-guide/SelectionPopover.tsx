@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { LandingSiteEntry } from '../navigator/types';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import type { LandingSiteEntry } from '../navigator/types';
 import {
   EvaluatedSlotEntry,
   MAX_SITE_SLOTS,
   SelectionMode,
 } from './state';
+import './selection-clean.css';
 
 interface SelectionPopoverProps {
   sites: LandingSiteEntry[];
@@ -26,364 +27,222 @@ interface SelectionPopoverProps {
   onClose: () => void;
 }
 
-type CategoryFilter = 'all' | 'sunlit' | 'psr';
+interface CoordinateDraft {
+  pointKey: string;
+  latitude: string;
+  longitude: string;
+  error?: { field: 'latitude' | 'longitude'; message: string };
+}
+
+function CoordinateForm({
+  entry,
+  slotIdx,
+  onPick,
+}: {
+  entry: EvaluatedSlotEntry;
+  slotIdx: number;
+  onPick: SelectionPopoverProps['onPickCustomCoords'];
+}) {
+  const id = useId();
+  const latitudeRef = useRef<HTMLInputElement>(null);
+  const longitudeRef = useRef<HTMLInputElement>(null);
+  const initialLatitude = String(entry.site.center.latitude_deg);
+  const initialLongitude = String(entry.site.center.longitude_east_deg);
+  const pointKey = `${entry.label}:${entry.site.id}:${initialLatitude}:${initialLongitude}`;
+  const initialDraft: CoordinateDraft = {
+    pointKey,
+    latitude: initialLatitude,
+    longitude: initialLongitude,
+  };
+  const [draft, setDraft] = useState<CoordinateDraft>(initialDraft);
+  // A new selected point gets its own values immediately. Playback rerenders do
+  // not overwrite edits, and switching slots never applies another slot's draft.
+  const current = draft.pointKey === pointKey ? draft : initialDraft;
+  const latitudeError = current.error?.field === 'latitude';
+  const longitudeError = current.error?.field === 'longitude';
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const latitude = current.latitude.trim() === '' ? Number.NaN : Number(current.latitude);
+    const longitude = current.longitude.trim() === '' ? Number.NaN : Number(current.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+      setDraft({ ...current, error: { field: 'latitude', message: 'Enter a latitude from -90 to 90 degrees.' } });
+      latitudeRef.current?.focus();
+      return;
+    }
+    if (!Number.isFinite(longitude) || longitude < -360 || longitude > 360) {
+      setDraft({ ...current, error: { field: 'longitude', message: 'Enter an east longitude from -360 to 360 degrees.' } });
+      longitudeRef.current?.focus();
+      return;
+    }
+    setDraft({ ...current, error: undefined });
+    onPick(latitude, longitude, slotIdx);
+  };
+
+  return (
+    <form className="selection-coordinate-form" aria-label="Coordinates" onSubmit={submit} noValidate>
+      <div className="selection-coordinate-fields">
+        <label className="field-block">
+          <span>Latitude (degrees)</span>
+          <input
+            ref={latitudeRef}
+            type="number"
+            min={-90}
+            max={90}
+            step="any"
+            required
+            value={current.latitude}
+            aria-invalid={latitudeError || undefined}
+            aria-describedby={latitudeError ? `${id}-bounds ${id}-error` : `${id}-bounds`}
+            onChange={(event) => setDraft({ ...current, latitude: event.target.value, error: undefined })}
+          />
+        </label>
+        <label className="field-block">
+          <span>Longitude east (degrees)</span>
+          <input
+            ref={longitudeRef}
+            type="number"
+            min={-360}
+            max={360}
+            step="any"
+            required
+            value={current.longitude}
+            aria-invalid={longitudeError || undefined}
+            aria-describedby={longitudeError ? `${id}-bounds ${id}-error` : `${id}-bounds`}
+            onChange={(event) => setDraft({ ...current, longitude: event.target.value, error: undefined })}
+          />
+        </label>
+      </div>
+      <p id={`${id}-bounds`} className="muted-caption">
+        Latitude -90 to 90. Longitude -360 to 360; positive east, negative west.
+      </p>
+      {current.error && <p id={`${id}-error`} className="selection-error" role="alert">{current.error.message}</p>}
+      <div>
+        <button type="submit" className="btn-primary-sm">Use coordinates</button>
+      </div>
+      <p className="muted-caption">
+        Free points use approximate sky geometry; local terrain is not assessed.
+      </p>
+    </form>
+  );
+}
 
 export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   sites,
   entries,
   activeSlotIdx,
-  selectionMode,
-  reticleCoords,
   coverageNotice,
-  onChangeSelectionMode,
   onSelectActiveSlot,
   onAssignSiteAt,
   onPickCustomCoords,
   onAddSlot,
   onRemoveSlot,
-  onSwapFirstTwo,
-  onFixReticleToActive,
-  onCompareWithPsr,
   onKeepOnlyOne,
   onClose,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [catFilter, setCatFilter] = useState<CategoryFilter>('all');
+  const titleId = useId();
+  const siteSelectRef = useRef<HTMLSelectElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const safeActiveIdx = Math.max(0, Math.min(entries.length - 1, activeSlotIdx));
+  const activeEntry = entries[safeActiveIdx];
+  const comparing = entries.length > 1;
+  const currentIsNamed = sites.some((site) => site.id === activeEntry?.site.id);
 
-  const activeEntry = entries[activeSlotIdx] ?? entries[0];
-
-  const [customLatInput, setCustomLatInput] = useState<string>(() =>
-    activeEntry.analysis.terrain.latitudeDeg.toFixed(2),
-  );
-  const [customLonInput, setCustomLonInput] = useState<string>(() =>
-    activeEntry.analysis.terrain.longitudeEastDeg.toFixed(1),
-  );
-  const [customError, setCustomError] = useState<string | null>(null);
-
-  const handleSubmitCustomCoords = (e: React.FormEvent) => {
-    e.preventDefault();
-    const lat = Number.parseFloat(customLatInput);
-    const lon = Number.parseFloat(customLonInput);
-    if (!Number.isFinite(lat) || lat < -89.9 || lat > 89.9) {
-      setCustomError('Enter a latitude between -89.9° and +89.9°.');
-      return;
+  useEffect(() => {
+    // StrictMode replays effects during development. Keep the opening control,
+    // rather than replacing it with the select focused by the first run.
+    if (returnFocusRef.current === null) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     }
-    if (!Number.isFinite(lon) || lon < -360 || lon > 360) {
-      setCustomError('Enter an East longitude between -360° and 360°.');
-      return;
-    }
-    setCustomError(null);
-    onPickCustomCoords(lat, lon, activeSlotIdx);
+    siteSelectRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const close = () => {
+    onClose();
+    if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus({ preventScroll: true });
   };
-
-  const filteredSites = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return sites.filter((s) => {
-      if (catFilter === 'psr' && !s.center.is_psr) return false;
-      if (catFilter === 'sunlit' && s.center.is_psr) return false;
-      if (!q) return true;
-      return (
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.id.toLowerCase().includes(q)
-      );
-    });
-  }, [sites, searchQuery, catFilter]);
-
-  const selectOptions = useMemo(() => {
-    const hasCurrent = filteredSites.some((s) => s.id === activeEntry.site.id);
-    if (hasCurrent) return filteredSites;
-    return [activeEntry.site, ...filteredSites];
-  }, [filteredSites, activeEntry.site]);
 
   return (
     <section
-      className="popover-card selection-popover"
+      className="popover-card selection-popover selection-clean"
       role="dialog"
-      aria-label="Lunar landing site selection (1 to 4 points)"
+      aria-labelledby={titleId}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        }
+      }}
     >
       <div className="popover-head">
-        <div>
-          <span className="drawer-eyebrow">1 to 4 Landing Points</span>
-          <h2>Select Sites</h2>
-        </div>
-        <button
-          type="button"
-          className="btn-close-panel"
-          onClick={onClose}
-          aria-label="Close site selection"
-        >
+        <h2 id={titleId}>Choose a place</h2>
+        <button type="button" className="btn-close-panel" onClick={close} aria-label="Close site selection">
           Close
         </button>
       </div>
 
-      <div className="field-block">
-        <div className="section-title-row">
-          <span>Active points ({entries.length}/{MAX_SITE_SLOTS})</span>
-          {entries.length < MAX_SITE_SLOTS && (
-            <button
-              type="button"
-              className="btn-link-sm"
-              onClick={onAddSlot}
-              aria-label="Add comparison site"
-            >
-              + Add site
-            </button>
-          )}
-        </div>
-
-        <div className="slot-tabs-grid" role="group" aria-label="Selected sites">
-          {entries.map((item, idx) => {
-            const isActive = idx === activeSlotIdx;
-            return (
-              <div
-                key={`${item.label}-${idx}`}
-                className={`slot-tab-item ${isActive ? 'active' : ''}`}
+      {comparing && (
+        <div className="selection-comparison" role="group" aria-label="Places to compare">
+          {entries.map((entry, index) => (
+            <div className="selection-place-row" key={entry.label}>
+              <button
+                type="button"
+                className="selection-place-pick"
+                aria-label={`Edit place ${entry.label}: ${entry.site.name}`}
+                aria-pressed={index === safeActiveIdx}
+                onClick={() => onSelectActiveSlot(index)}
               >
-                <button
-                  type="button"
-                  className="slot-tab-pick"
-                  aria-pressed={isActive}
-                  onClick={() => onSelectActiveSlot(idx)}
-                >
-                  <span aria-hidden="true">{item.meta.glyph}</span>
-                  <span className="slot-tab-label">{item.label}</span>
-                  <span className="slot-tab-name">{item.site.name}</span>
-                </button>
-                {entries.length > 1 && (
-                  <button
-                    type="button"
-                    className="slot-tab-remove"
-                    aria-label={`Remove Site ${item.label}`}
-                    onClick={() => onRemoveSlot(idx)}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="field-block">
-        <span>Click Moon terrain or target Site {activeEntry.label}</span>
-        <div className="chip-row" role="group" aria-label="3D Moon selection mode">
-          <button
-            type="button"
-            className={`choice-btn ${selectionMode === 'cursor' ? 'active' : ''}`}
-            aria-pressed={selectionMode === 'cursor'}
-            onClick={() => onChangeSelectionMode('cursor')}
-          >
-            Click Anywhere
-          </button>
-          <button
-            type="button"
-            className={`choice-btn ${selectionMode === 'crosshair' ? 'active' : ''}`}
-            aria-pressed={selectionMode === 'crosshair'}
-            onClick={() => onChangeSelectionMode('crosshair')}
-          >
-            Center Reticle
-          </button>
-        </div>
-      </div>
-
-      {selectionMode === 'crosshair' && (
-        <div className="mode-panel">
-          <p className="muted-caption">
-            Reticle: {reticleCoords.latDeg.toFixed(1)}°, {reticleCoords.lonEastDeg.toFixed(1)}° E
-          </p>
-          <button
-            type="button"
-            className="btn-primary-sm"
-            onClick={onFixReticleToActive}
-          >
-            Drop custom pin on Site {activeEntry.label}
-          </button>
-        </div>
-      )}
-
-      <form className="mode-panel" onSubmit={handleSubmitCustomCoords} aria-label="Custom unvisited landing coordinates">
-        <span className="muted-caption">Unvisited spot · Drop Site {activeEntry.label} anywhere on the Moon</span>
-        <div className="time-fields-row">
-          <label className="field-block">
-            <span>Lat (°)</span>
-            <input
-              type="number"
-              aria-label="Custom latitude degrees"
-              step="0.1"
-              min={-89.9}
-              max={89.9}
-              value={customLatInput}
-              onChange={(e) => setCustomLatInput(e.target.value)}
-            />
-          </label>
-          <label className="field-block">
-            <span>Lon (°E)</span>
-            <input
-              type="number"
-              aria-label="Custom East longitude degrees"
-              step="0.1"
-              min={-360}
-              max={360}
-              value={customLonInput}
-              onChange={(e) => setCustomLonInput(e.target.value)}
-            />
-          </label>
-        </div>
-        <div className="action-row">
-          <button type="submit" className="btn-primary-sm">
-            Drop custom pin
-          </button>
-          <button
-            type="button"
-            className="btn-secondary-sm"
-            onClick={() => {
-              setCustomLatInput('-83.40');
-              setCustomLonInput('42.5');
-              setCustomError(null);
-              onPickCustomCoords(-83.4, 42.5, activeSlotIdx);
-            }}
-          >
-            Unvisited Ridge
-          </button>
-          <button
-            type="button"
-            className="btn-secondary-sm"
-            onClick={() => {
-              setCustomLatInput('-43.30');
-              setCustomLonInput('348.8');
-              setCustomError(null);
-              onPickCustomCoords(-43.3, 348.8, activeSlotIdx);
-            }}
-          >
-            Tycho Crater
-          </button>
-        </div>
-        {customError && <p className="muted-caption">{customError}</p>}
-      </form>
-
-      {coverageNotice && (
-        <div className="notice-box" role="status">
-          {coverageNotice}
-        </div>
-      )}
-
-      <label className="field-block">
-        <span>Search NASA candidate sites</span>
-        <input
-          type="search"
-          aria-label="Search South Pole site"
-          placeholder="Shackleton, Malapert, Nobile, Cabeus..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </label>
-
-      <div className="chip-row" role="group" aria-label="Filter sites by lighting">
-        <button
-          type="button"
-          className={`btn-filter-chip ${catFilter === 'all' ? 'active' : ''}`}
-          aria-pressed={catFilter === 'all'}
-          onClick={() => setCatFilter('all')}
-        >
-          All ({sites.length})
-        </button>
-        <button
-          type="button"
-          className={`btn-filter-chip ${catFilter === 'sunlit' ? 'active' : ''}`}
-          aria-pressed={catFilter === 'sunlit'}
-          onClick={() => setCatFilter('sunlit')}
-        >
-          Sunlit Ridges
-        </button>
-        <button
-          type="button"
-          className={`btn-filter-chip ${catFilter === 'psr' ? 'active' : ''}`}
-          aria-pressed={catFilter === 'psr'}
-          onClick={() => setCatFilter('psr')}
-        >
-          PSR Craters
-        </button>
-      </div>
-
-      <label className="field-block">
-        <span>
-          {activeEntry.meta.glyph} Site {activeEntry.label} ({activeEntry.meta.shapeName})
-        </span>
-        <select
-          aria-label={`Select Site ${activeEntry.label}`}
-          value={activeEntry.site.id}
-          onChange={(e) => onAssignSiteAt(activeSlotIdx, e.target.value)}
-        >
-          {selectOptions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.center.latitude_deg.toFixed(2)}°, {s.center.longitude_east_deg.toFixed(1)}°E)
-            </option>
+                <span className="selection-place-label">{entry.label}</span>
+                <span>{entry.site.name}</span>
+              </button>
+              <button
+                type="button"
+                className="selection-place-remove"
+                aria-label={`Remove place ${entry.label}: ${entry.site.name}`}
+                onClick={() => onRemoveSlot(index)}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
           ))}
-        </select>
-      </label>
+        </div>
+      )}
 
-      <ul className="site-cards-list" aria-label="South Pole candidate sites">
-        {filteredSites.length === 0 ? (
-          <li className="muted-caption">No sites match this filter.</li>
-        ) : (
-          filteredSites.map((s) => {
-            const assignedSlots = entries.filter((e) => e.site.id === s.id);
-            const isActiveAssigned = activeEntry.site.id === s.id;
-            const solarPct = (s.engineering_summary.solar.mean_illum_fraction * 100).toFixed(0);
-            return (
-              <li key={s.id}>
-                <button
-                  type="button"
-                  className={`site-pick-card ${isActiveAssigned ? 'is-selected' : ''}`}
-                  onClick={() => onAssignSiteAt(activeSlotIdx, s.id)}
-                >
-                  <div className="site-pick-top">
-                    <strong>{s.name}</strong>
-                    <div className="site-pick-badges">
-                      {s.center.is_psr && <span className="tag-psr">PSR</span>}
-                      {assignedSlots.map((slotItem) => (
-                        <span key={slotItem.label} className="tag-slot">
-                          {slotItem.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <span className="site-pick-meta">
-                    Mean sun {solarPct}% · Slope {s.center.slope_deg.toFixed(1)}° · {Math.abs(s.center.latitude_deg).toFixed(2)}° S
-                  </span>
-                </button>
-              </li>
-            );
-          })
-        )}
-      </ul>
+      {activeEntry ? (
+        <>
+          <label className="field-block">
+            <span>Named sites</span>
+            <select
+              ref={siteSelectRef}
+              value={activeEntry.site.id}
+              onChange={(event) => onAssignSiteAt(safeActiveIdx, event.target.value)}
+            >
+              {!currentIsNamed && <option value={activeEntry.site.id}>{activeEntry.site.name}</option>}
+              {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
+            </select>
+          </label>
 
-      <div className="action-row wrap">
-        <button
-          type="button"
-          className="btn-primary-sm"
-          onClick={onCompareWithPsr}
-        >
-          Compare with dark PSR
-        </button>
-        {entries.length >= 2 && (
-          <button
-            type="button"
-            className="btn-secondary-sm"
-            onClick={onSwapFirstTwo}
-          >
-            Swap A ↔ B
+          <details className="selection-coordinate-disclosure">
+            <summary>Enter coordinates</summary>
+            <CoordinateForm entry={activeEntry} slotIdx={safeActiveIdx} onPick={onPickCustomCoords} />
+          </details>
+        </>
+      ) : <p className="muted-caption">No place is selected.</p>}
+
+      {coverageNotice && <p className="muted-caption" role="status">{coverageNotice}</p>}
+
+      <div className="selection-comparison-actions">
+        {entries.length < MAX_SITE_SLOTS && (
+          <button type="button" className="btn-link-sm" onClick={onAddSlot}>
+            {comparing ? 'Add place' : 'Compare places'}
           </button>
         )}
-        {entries.length > 1 && (
-          <button
-            type="button"
-            className="btn-secondary-sm"
-            onClick={onKeepOnlyOne}
-          >
-            Single site only
+        {comparing && (
+          <button type="button" className="btn-link-sm" onClick={onKeepOnlyOne}>
+            Keep only this place
           </button>
         )}
       </div>

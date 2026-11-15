@@ -21,6 +21,8 @@ export interface SiteReadout {
   communicationNote: string;
   modelNote: string;
   summary?: string;
+  /** Null for geometric-only or unavailable readings; never inferred from copy. */
+  jointVisibilitySatisfied?: boolean | null;
 }
 
 export interface SiteReadoutInput {
@@ -123,14 +125,16 @@ export function buildSiteReadout({ dataset, site, terrainHorizonDeg, epochIdx, c
     earth: describeBody(earth, geometric),
     basis: !available ? 'Data unavailable' : geometric ? 'Approximate geometry · geometric horizon' : 'LOLA terrain horizon · SPICE sky samples',
     energyNote: !available ? 'Energy is not assessed.' : geometric
-      ? 'The center angle alone does not determine sunlight at the surface. Local terrain and panel output are not assessed.'
+      ? 'Local terrain and solar power are not assessed.'
       : sun.diskState === 'hidden'
-        ? 'No direct sunlight in this sample. Stored energy and other power sources are not assessed.'
-        : 'Sunlight can supply solar panels. Output depends on orientation, area, efficiency and conditions.',
-    communicationNote: 'Earth visibility is one condition for direct communication. Antennas, pointing, ground stations and radio performance also matter; a working radio link is not assessed.',
+        ? 'No direct sunlight is modeled at this sample; stored energy is not assessed.'
+        : 'Sunlight may supply solar panels; output depends on their setup.',
+    communicationNote: 'Earth view can support direct communication; station access and radio performance are not assessed.',
     modelNote: geometric
       ? 'Sky directions are reconstructed from rounded SPICE-based samples for an observer on the reference sphere. The geometric horizon is its tangent plane. Local obstruction, PSR, power and relay availability are not calculated. Rendered relief is visual context.'
       : `Hourly samples from ${dataset.mission_window.start_utc} to ${dataset.mission_window.end_utc}. Disk visibility approximates a uniform disk against the horizon at its central azimuth. Sky positions refer to the catalogued site center; terrain within the local grid is interpolated. Rendered relief is visual context, separate from this sampled terrain horizon.`,
     summary: compactReading(sun, earth, geometric),
+    jointVisibilitySatisfied: !geometric && sun.status === 'known' && earth.status === 'known'
+      ? sun.criterionSatisfied && earth.criterionSatisfied : null,
   };
 }

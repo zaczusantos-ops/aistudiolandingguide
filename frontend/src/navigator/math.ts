@@ -6,6 +6,7 @@ import {
   ScoreSummary,
   ScoreWeightsConfig,
 } from './types';
+import { analyzeSampledRuns, integrateSavedSeries } from './sampledIntervals';
 
 export const SOLAR_CONSTANT_1AU_W_M2 = 1361.0;
 
@@ -225,18 +226,9 @@ export function computeCompositeScore(
   };
 }
 
-function longestFalseRunHours(flags: boolean[], stepHours: number): number {
-  let maxRun = 0;
-  let cur = 0;
-  for (const ok of flags) {
-    if (ok) {
-      cur = 0;
-    } else {
-      cur++;
-      if (cur > maxRun) maxRun = cur;
-    }
-  }
-  return maxRun * stepHours;
+function longestFalseRunHours(flags: readonly (boolean | null)[], timestamps: readonly string[]): number {
+  const runs = analyzeSampledRuns(timestamps, flags.map(ok => ok === null ? null : !ok));
+  return runs.status === 'known' ? runs.longestMatchingSpan?.hours ?? 0 : Number.NaN;
 }
 
 export function evaluateLiveSite(
@@ -264,15 +256,12 @@ export function evaluateLiveSite(
 
   const sky = site.sky_series;
   const n = missionWindow.timestamps_utc.length;
-  const stepHours = missionWindow.step_seconds / 3600;
   const epochStates = new Array<LiveEpochState>(n);
 
   let illumSum = 0;
-  let sunlitTrapz = 0;
-  let powerSumTrapz = 0;
   let peakPowerW = 0;
-  let currentShadowRun = 0;
-  let maxShadowRun = 0;
+  const sunlitFlags = new Array<boolean | null>(n);
+  const powerSamples = new Array<number>(n);
 
   let dteCount = 0;
   let elfoCount = 0;
@@ -311,16 +300,8 @@ export function evaluateLiveSite(
     if (powerW > peakPowerW) peakPowerW = powerW;
 
     illumSum += fIllum;
-    const trapWeight = i === 0 || i === n - 1 ? 0.5 : 1.0;
-    powerSumTrapz += trapWeight * powerW;
-    sunlitTrapz += trapWeight * (fIllum > 1e-6 ? 1 : 0);
-
-    if (fIllum <= 1e-6) {
-      currentShadowRun++;
-      if (currentShadowRun > maxShadowRun) maxShadowRun = currentShadowRun;
-    } else {
-      currentShadowRun = 0;
-    }
+    powerSamples[i] = powerW;
+    sunlitFlags[i] = Number.isFinite(fIllum) ? fIllum > 0 : null;
 
     const dteMargin = config.dteMarginMode === 'full_disk' ? earthRadius : 0;
     const dteVisible = earthEl - dteMargin > hEarth;
@@ -373,10 +354,14 @@ export function evaluateLiveSite(
   }
 
   const meanIllumFraction = illumSum / n;
-  const maxContinuousShadowHours = maxShadowRun * stepHours;
-  const energyCycleWh = powerSumTrapz * stepHours;
+  // A span joins saved observations; it does not resolve a physical rise/set event.
+  const maxContinuousShadowHours = longestFalseRunHours(sunlitFlags, missionWindow.timestamps_utc);
+  const energy = integrateSavedSeries(missionWindow.timestamps_utc, powerSamples);
+  const sunlight = integrateSavedSeries(missionWindow.timestamps_utc,
+    sunlitFlags.map(flag => flag === null ? Number.NaN : Number(flag)));
+  const energyCycleWh = energy.status === 'known' ? energy.valueHours : Number.NaN;
   const energyPerM2Wh = energyCycleWh / Math.max(config.panelAreaM2, 1e-6);
-  const minBatteryWh = config.survivalLoadW * maxContinuousShadowHours;
+  const minBatteryWh = n < 2 ? Number.NaN : config.survivalLoadW * maxContinuousShadowHours;
 
   const dteDutyCyclePct = (dteCount / n) * 100;
   const elfoConstellationDutyCyclePct = (elfoCount / n) * 100;
@@ -404,7 +389,7 @@ export function evaluateLiveSite(
     terrain,
     solar: {
       meanIllumFraction,
-      sunlitHours: sunlitTrapz * stepHours,
+      sunlitHours: sunlight.status === 'known' ? sunlight.valueHours : Number.NaN,
       maxContinuousShadowHours,
       energyCycleWh,
       energyPerM2Wh,
@@ -417,8 +402,8 @@ export function evaluateLiveSite(
       lroDutyCyclePct,
       combinedDutyCyclePct,
       relayCoverageGainPct,
-      maxBlackoutDteHours: longestFalseRunHours(dteFlags, stepHours),
-      maxBlackoutCombinedHours: longestFalseRunHours(combFlags, stepHours),
+      maxBlackoutDteHours: longestFalseRunHours(dteFlags, missionWindow.timestamps_utc),
+      maxBlackoutCombinedHours: longestFalseRunHours(combFlags, missionWindow.timestamps_utc),
     },
     score,
     epochStates,

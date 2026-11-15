@@ -166,125 +166,85 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     expect(customMid.description).toMatch(/Outside the 80°S–90°S polar ELFO/i);
   });
 
-  it('preserves the Moon brief and opens exploration from accessible NASA explanations', () => {
+  it('preserves the Moon opening and presents current conditions before optional numbers', () => {
     render(<App />);
-
     expect(screen.getByRole('heading', { name: /Landing\s*Guide\./i })).toBeInTheDocument();
-    expect(screen.getByRole('status', { name: '3D view status' })).toHaveTextContent(
-      '3D view unavailable',
-    );
-    expect(screen.queryByRole('button', { name: /How it works/i })).not.toBeInTheDocument();
-
-    expect(screen.getByRole('heading', { name: /A low Sun, an uneven horizon\./i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /What keeps a site in sunlight\?/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /When can Earth be seen\?/i })).toBeInTheDocument();
-    expect(
-      screen.getByAltText(/NASA LOLA south-pole terrain map/i),
-    ).toBeInTheDocument();
-
-    // Interactive South Pole landmark hotspot
-    const missionSection = document.getElementById('mission')!;
-    fireEvent.click(within(missionSection).getByRole('button', { name: /^Inspect Malapert Massif$/i }));
-    expect(within(missionSection).getByRole('button', { name: /Explore this site/i })).toBeInTheDocument();
-
-    // Explanatory media are optional and never autoplay.
-    const videos = document.querySelectorAll('video');
-    expect(videos).toHaveLength(2);
-    for (const video of videos) {
+    expect(screen.getByRole('status', { name: '3D view status' })).toHaveTextContent('3D view unavailable');
+    expect(document.querySelectorAll('video')).toHaveLength(2);
+    for (const video of document.querySelectorAll('video')) {
       expect(video).toHaveAttribute('controls');
       expect(video).toHaveAttribute('preload', 'none');
       expect(video).not.toHaveAttribute('autoplay');
     }
-
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
-
-    expect(screen.getByRole('button', { name: /Return to Mission Brief/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Charts$/i })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: /^Data/i })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: /Sites \(1\)/i })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: /^Time$/i })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: 'Orbit 3D' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Astronaut' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /Return to overview/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Conditions' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Over time' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Place' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-expanded', 'false');
+    const data = screen.getByRole('complementary', { name: 'Site conditions and model details' });
+    expect(within(data).getByRole('region', { name: 'Sun reading' })).toHaveTextContent('depends on');
+    expect(within(data).getByRole('region', { name: 'Earth reading' })).toHaveTextContent('communication');
+    expect(within(data).getByText('Angles, assumptions and sources').closest('details')).not.toHaveAttribute('open');
+    expect(within(data).getByText('Over a period').closest('details')).not.toHaveAttribute('open');
   });
 
-  it('drops custom unvisited landing pins anywhere on the Moon, manages 1–4 sites, and switches Astronaut view', () => {
+  it('keeps arbitrary point selection accessible and comparison optional, with the astronaut view intact', () => {
     render(<App />);
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Place' }));
+    expect(screen.getByRole('combobox', { name: 'Named sites' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Enter coordinates'));
+    fireEvent.change(screen.getByLabelText('Latitude (degrees)'), { target: { value: '-83.4' } });
+    fireEvent.change(screen.getByLabelText('Longitude east (degrees)'), { target: { value: '42.5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use coordinates' }));
+    expect(screen.getByText('Approximate geometry · geometric horizon')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Over a period'));
+    const sunlightRow = screen.getByRole('row', { name: /^Average visible Sun fraction/ });
+    expect(within(sunlightRow).getByRole('cell')).toHaveTextContent(/^—$/);
 
-    // Drop custom unvisited landing coordinates via SelectionPopover
-    fireEvent.click(screen.getByRole('button', { name: /Sites \(1\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Tycho Crater/i }));
-    expect(screen.getByText(/Unvisited pin dropped at Custom \(43\.30°S, 348\.8°E\)/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Place' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Compare places' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Named sites' }), { target: { value: 'shackleton_psr_floor' } });
+    expect(screen.getByRole('button', { name: 'Places (2)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Places (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add place' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Named sites' }), { target: { value: 'malapert_massif' } });
+    expect(screen.getByRole('button', { name: 'Places (3)' })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/Custom latitude degrees/i), { target: { value: '-83.4' } });
-    fireEvent.change(screen.getByLabelText(/Custom East longitude degrees/i), { target: { value: '42.5' } });
-    fireEvent.click(screen.getByRole('button', { name: /Drop custom pin/i }));
-    expect((screen.getByLabelText('Select Site A') as HTMLSelectElement).value).toBe('custom_S83_40_42_50');
-
-    fireEvent.click(screen.getByRole('button', { name: /Add comparison site/i }));
-    expect(screen.getByRole('button', { name: /Sites \(2\)/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Compare with dark PSR/i }));
-    expect((screen.getByLabelText('Select Site B') as HTMLSelectElement).value).toBe(
-      'shackleton_psr_floor',
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /Add comparison site/i }));
-    expect(screen.getByRole('button', { name: /Sites \(3\)/i })).toBeInTheDocument();
-    const siteList = screen.getByRole('list', { name: /South Pole candidate sites/i });
-    fireEvent.click(within(siteList).getByRole('button', { name: /Malapert Massif/i }));
-    expect((screen.getByLabelText('Select Site C') as HTMLSelectElement).value).toBe(
-      'malapert_massif',
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Astronaut' }));
-    expect(screen.getByRole('button', { name: 'Astronaut' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Perspective' }), { target: { value: 'astronaut' } });
     expect(screen.getByTestId('astronaut-stage')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Look Sun/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Look Earth/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /^Data/i }));
-    const dataPanel = screen.getByRole('complementary', { name: /Site metrics and scientific provenance drawer/i });
-    expect(within(dataPanel).getByRole('region', { name: 'Sun reading' })).toBeInTheDocument();
-    expect(within(dataPanel).getByRole('region', { name: 'Earth reading' })).toBeInTheDocument();
-    // A free point retains a selected slot, but never inherits catalogued
-    // terrain/energy metrics just because a visual scaffold was generated.
-    const sunlightRow = within(dataPanel).getByRole('row', { name: /^Mean sunlight/i });
-    expect(within(sunlightRow).getAllByRole('cell')).toHaveLength(3);
-    expect(within(sunlightRow).getAllByRole('cell')[0]).toHaveTextContent(/^—$/);
-
-    fireEvent.click(screen.getByRole('button', { name: /^Glossary$/i }));
-    expect(screen.getByRole('region', { name: /Glossary of lunar concepts/i })).toBeInTheDocument();
-
-    const advToggle = screen.getByRole('button', { name: /Assumptions & sources/i });
-    expect(advToggle).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(advToggle);
-    expect(advToggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Conditions' }));
+    fireEvent.click(screen.getByText('Angles, assumptions and sources'));
     expect(screen.getByText(/16 epochs at one location/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Single site only/i }));
-    expect(screen.getByRole('button', { name: /Sites \(1\)/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Places (3)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep only this place' }));
+    expect(screen.getByRole('button', { name: 'Place' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Named sites' })).toHaveValue('malapert_massif');
   });
 
-  it('toggles accessible HTML charts table and validates UTC dates in Time popover', () => {
+  it('uses one task panel at a time and separates selected UTC from the optional analysis period', () => {
     render(<App />);
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
-
-    fireEvent.click(screen.getByRole('button', { name: /^Charts$/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Over time' }));
+    expect(screen.queryByRole('complementary', { name: 'Site conditions and model details' })).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Visible solar disk fraction/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /View table/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'View table' }));
     expect(screen.getByRole('table')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /^Time$/i }));
-    const dateInput = screen.getByLabelText('Start date (UTC)') as HTMLInputElement;
-    fireEvent.change(dateInput, { target: { value: '2026-10-05' } });
-    expect(screen.getByRole('alert')).toHaveTextContent(/2026-11-15/);
-
-    fireEvent.click(screen.getByRole('button', { name: /Reset window/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Time' }));
+    expect(screen.queryByRole('complementary', { name: 'Conditions over time' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date (UTC)'), { target: { value: '2026-10-05' } });
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date (UTC)'), { target: { value: '2026-11-22' } });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
-    expect(screen.getByText(/168h evaluated/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Analysis period and playback'));
+    fireEvent.change(screen.getByLabelText('Analysis period duration'), { target: { value: '7' } });
+    expect(screen.getByLabelText('Date (UTC)')).toHaveValue('2026-11-22');
+    expect(screen.getByLabelText('UTC sample timeline')).toHaveValue('168');
+    expect(screen.getByText(/168 hours between saved endpoints/)).toBeInTheDocument();
   });
 
   it('aligns NASA SVS 0-meridian UV projection, dual polar stereographic caps, and toggles Moon ↔ Topography elevation scale', async () => {
@@ -358,15 +318,10 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     render(<App />);
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
 
-    const btnMoon = screen.getByRole('button', { name: 'Moon' });
-    const btnTopo = screen.getByRole('button', { name: 'Topography' });
-    expect(btnMoon).toHaveAttribute('aria-pressed', 'true');
-    expect(btnTopo).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    expect(screen.getByRole('combobox', { name: 'Surface layer' })).toHaveValue('realistic');
     expect(screen.queryByRole('region', { name: /Topographic elevation scale/i })).not.toBeInTheDocument();
-
-    fireEvent.click(btnTopo);
-    expect(btnTopo).toHaveAttribute('aria-pressed', 'true');
-    expect(btnMoon).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Surface layer' }), { target: { value: 'topography' } });
     expect(screen.getByRole('region', { name: /Topographic elevation scale/i })).toBeInTheDocument();
   });
 });

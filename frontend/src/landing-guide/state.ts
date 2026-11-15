@@ -9,6 +9,7 @@ import {
   MissionWindow,
   ScoreSummary,
 } from '../navigator/types';
+import { analyzeSampledRuns, integrateSavedSeries } from '../navigator/sampledIntervals';
 
 export type ViewportMode = '3d' | 'astronaut';
 export type SelectionMode = 'cursor' | 'crosshair';
@@ -315,7 +316,7 @@ export function computeWindowSlice(
     startIdx: clampedStart,
     endIdx,
     epochCount: endIdx - clampedStart + 1,
-    totalHours: Math.max(1, endIdx - clampedStart),
+    totalHours: (Date.parse(timestampsUtc[endIdx]) - Date.parse(timestampsUtc[clampedStart])) / 3_600_000,
     clampedByEnd: rawEnd > n - 1,
   };
 }
@@ -324,22 +325,17 @@ function analyzeFalseRuns(
   epochs: LiveEpochState[],
   startIdx: number,
   endIdx: number,
-  stepHours: number,
-  predicate: (ep: LiveEpochState) => boolean,
+  timestamps: readonly string[],
+  predicate: (ep: LiveEpochState) => boolean | null,
 ): { falseCount: number; maxFalseHours: number } {
-  let falseCount = 0;
-  let maxRun = 0;
-  let curRun = 0;
-  for (let i = startIdx; i <= endIdx; i++) {
-    if (predicate(epochs[i])) {
-      curRun = 0;
-    } else {
-      if (curRun === 0) falseCount++;
-      curRun++;
-      if (curRun > maxRun) maxRun = curRun;
-    }
-  }
-  return { falseCount, maxFalseHours: maxRun * stepHours };
+  const flags = epochs.slice(startIdx, endIdx + 1).map(ep => {
+    const value = predicate(ep);
+    return value === null ? null : !value;
+  });
+  const runs = analyzeSampledRuns(timestamps.slice(startIdx, endIdx + 1), flags);
+  return runs.status === 'known'
+    ? { falseCount: runs.matchingRunCount, maxFalseHours: runs.longestMatchingSpan?.hours ?? 0 }
+    : { falseCount: Number.NaN, maxFalseHours: Number.NaN };
 }
 
 export function evaluateWindowMetrics(
@@ -350,11 +346,10 @@ export function evaluateWindowMetrics(
 ): WindowMetrics {
   const { startIdx, endIdx } = slice;
   const count = Math.max(1, endIdx - startIdx + 1);
-  const stepHours = missionWindow.step_seconds / 3600;
+  const timestamps = missionWindow.timestamps_utc.slice(startIdx, endIdx + 1);
+  const samples = analysis.epochStates.slice(startIdx, endIdx + 1);
 
   let illumSum = 0;
-  let sunlitTrapz = 0;
-  let powerSumTrapz = 0;
   let dteCount = 0;
   let elfoCount = 0;
   let combinedCount = 0;
@@ -362,9 +357,6 @@ export function evaluateWindowMetrics(
   for (let i = startIdx; i <= endIdx; i++) {
     const ep = analysis.epochStates[i];
     illumSum += ep.fIllum;
-    const trapW = count === 1 ? 1 : i === startIdx || i === endIdx ? 0.5 : 1.0;
-    powerSumTrapz += trapW * ep.powerW;
-    sunlitTrapz += trapW * (ep.fIllum > 1e-6 ? 1 : 0);
 
     if (ep.dteVisible) dteCount++;
     if (ep.elfoConstellationVisible) elfoCount++;
@@ -375,34 +367,31 @@ export function evaluateWindowMetrics(
     analysis.epochStates,
     startIdx,
     endIdx,
-    stepHours,
-    (ep) => ep.fIllum > 1e-6,
+    missionWindow.timestamps_utc,
+    (ep) => Number.isFinite(ep.fIllum) ? ep.fIllum > 0 : null,
   );
   const dteBlackouts = analyzeFalseRuns(
     analysis.epochStates,
     startIdx,
     endIdx,
-    stepHours,
+    missionWindow.timestamps_utc,
     (ep) => ep.dteVisible,
   );
   const combBlackouts = analyzeFalseRuns(
     analysis.epochStates,
     startIdx,
     endIdx,
-    stepHours,
+    missionWindow.timestamps_utc,
     (ep) => ep.combinedLinkVisible,
   );
 
   const meanIllumFraction = illumSum / count;
-  const sunlitHours =
-    count === 1
-      ? analysis.epochStates[startIdx].fIllum > 1e-6
-        ? stepHours
-        : 0
-      : sunlitTrapz * stepHours;
-  const energyCycleWh =
-    count === 1 ? analysis.epochStates[startIdx].powerW * stepHours : powerSumTrapz * stepHours;
-  const minBatteryWh = config.survivalLoadW * shadowStats.maxFalseHours;
+  const sunlight = integrateSavedSeries(timestamps,
+    samples.map(ep => Number.isFinite(ep.fIllum) ? Number(ep.fIllum > 0) : Number.NaN));
+  const energy = integrateSavedSeries(timestamps, samples.map(ep => ep.powerW));
+  const sunlitHours = sunlight.status === 'known' ? sunlight.valueHours : Number.NaN;
+  const energyCycleWh = energy.status === 'known' ? energy.valueHours : Number.NaN;
+  const minBatteryWh = count < 2 ? Number.NaN : config.survivalLoadW * shadowStats.maxFalseHours;
 
   const dteDutyCyclePct = (dteCount / count) * 100;
   const elfoDutyCyclePct = (elfoCount / count) * 100;

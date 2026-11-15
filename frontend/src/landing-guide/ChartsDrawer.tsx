@@ -55,6 +55,98 @@ function buildCommsSegments(
   return segments;
 }
 
+function visibilityStateLabel(ep: LiveSiteAnalysis['epochStates'][number], config: EngineeringConfig): string {
+  if (ep.dteVisible) return config.dteMarginMode === 'full_disk'
+    ? 'Whole-Earth criterion met'
+    : 'Earth-center criterion met';
+  if (config.relayEnabled && ep.elfoConstellationVisible) return 'Relay model criterion met';
+  return config.relayEnabled ? 'Neither criterion met' : 'Earth criterion not met';
+}
+
+/** Rounding must not turn a partly visible disk into a hidden or whole disk. */
+function diskPercent(fraction: number, decimals = 0): string {
+  if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) return '—';
+  if (fraction === 0) return '0%';
+  if (fraction === 1) return '100%';
+  const precision = 10 ** -decimals;
+  const percentage = fraction * 100;
+  if (percentage < precision) return `<${precision}%`;
+  if (percentage > 100 - precision) return `>${100 - precision}%`;
+  return `${percentage.toFixed(decimals)}%`;
+}
+
+function sampledHours(hours: number): string {
+  return Number.isFinite(hours) && hours >= 0 ? `${hours.toFixed(1)} h` : 'not assessed';
+}
+
+const TerrainBasis = () => (
+  <p className="muted-caption">
+    Catalogued sites · hourly SPICE sky samples and interpolated LOLA terrain horizons.
+    Rendered relief is separate from the horizon calculation.
+  </p>
+);
+
+/** One saved timestamp cannot support a duration or an energy integral. */
+const InstantSample: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean }> = ({
+  entries, missionWindow, slice, config, excludedFreePoints, onClose,
+}) => {
+  const sampleIdx = slice.startIdx;
+  const utc = formatUtcShort(missionWindow.timestamps_utc[sampleIdx]);
+  return (
+    <aside className="side-drawer drawer-left" aria-label="Conditions over time">
+      <div className="drawer-header">
+        <div><span className="drawer-eyebrow">Selected instant</span><h2>Over time</h2></div>
+        <button type="button" className="btn-close-panel" onClick={onClose} aria-label="Close over time panel">
+          Close
+        </button>
+      </div>
+      <div className="drawer-scroll">
+        <p role="status">
+          Only one saved sample is available. This describes an instant; duration, energy and
+          continuous visibility are not assessed.
+        </p>
+        {excludedFreePoints && (
+          <p className="muted-caption">
+            Free points are omitted: these charts need a cataloged terrain horizon. See Conditions for approximate point geometry.
+          </p>
+        )}
+        <TerrainBasis />
+        <div className="accessible-table-wrap">
+          <table className="data-table">
+            <caption>Saved sample · {entries.map(entry => `${entry.label}: ${entry.site.name}`).join(', ')}</caption>
+            <thead>
+              <tr>
+                <th scope="col">UTC Time</th>
+                {entries.map(entry => (
+                  <React.Fragment key={entry.label}>
+                    <th scope="col">{entry.label}: Visible Sun disk (%)</th>
+                    <th scope="col">{entry.label}: Modelled visibility state</th>
+                  </React.Fragment>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{utc}</td>
+                {entries.map(entry => {
+                  const state = entry.analysis.epochStates[sampleIdx];
+                  return (
+                    <React.Fragment key={entry.label}>
+                      <td>{diskPercent(state.fIllum)}</td>
+                      <td>{visibilityStateLabel(state, config)}</td>
+                    </React.Fragment>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="muted-caption">Visible disk fraction and model criteria, not electrical output or a working radio link.</p>
+      </div>
+    </aside>
+  );
+};
+
 export const ChartsDrawer: React.FC<ChartsDrawerProps> = (props) => {
   const { entries, terrainSiteIds, activeSlotIdx, onClose } = props;
   const terrainIds = new Set(terrainSiteIds);
@@ -67,20 +159,24 @@ export const ChartsDrawer: React.FC<ChartsDrawerProps> = (props) => {
 
   if (terrainEntries.length === 0) {
     return (
-      <aside className="side-drawer drawer-left" aria-label="Comparison charts drawer">
+      <aside className="side-drawer drawer-left" aria-label="Conditions over time">
         <div className="drawer-header">
-          <div><h2>Charts</h2></div>
+          <div><h2>Over time</h2></div>
           <div className="drawer-head-actions">
-            <button type="button" className="btn-close-panel" onClick={onClose} aria-label="Close charts panel">
+            <button type="button" className="btn-close-panel" onClick={onClose} aria-label="Close over time panel">
               Close
             </button>
           </div>
         </div>
         <div className="drawer-scroll">
-          <p>These charts need a cataloged terrain horizon. See Data for this point's approximate geometry.</p>
+          <p>These charts need a cataloged terrain horizon. See Conditions for this point's approximate geometry.</p>
         </div>
       </aside>
     );
+  }
+
+  if (props.slice.epochCount < 2) {
+    return <InstantSample {...props} entries={terrainEntries} excludedFreePoints={excludedFreePoints} />;
   }
 
   return (
@@ -215,14 +311,6 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
     return Array.from(indices).sort((a, b) => a - b);
   }, [slice.startIdx, slice.endIdx, slice.totalHours, epochIdx]);
 
-  const linkLabel = (ep: LiveSiteAnalysis['epochStates'][number]) => {
-    if (ep.dteVisible) return config.dteMarginMode === 'full_disk'
-      ? 'Whole-Earth criterion met'
-      : 'Earth-center criterion met';
-    if (config.relayEnabled && ep.elfoConstellationVisible) return 'Relay model criterion met';
-    return config.relayEnabled ? 'Neither criterion met' : 'Earth criterion not met';
-  };
-
   const curSunX = azToX(primaryEntry.site.sky_series.sun_az_deg[epochIdx]);
   const curSunY = toPlotY(primaryEntry.site.sky_series.sun_el_deg[epochIdx], yMin, yMax, skyTop, skyH);
   const curEarthX = azToX(primaryEntry.site.sky_series.earth_az_deg[epochIdx]);
@@ -231,11 +319,11 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
   const curElfoY = toPlotY(primaryEntry.site.sky_series.elfo_primary_el_deg[epochIdx], yMin, yMax, skyTop, skyH);
 
   return (
-    <aside className="side-drawer drawer-left" aria-label="Comparison charts drawer">
+    <aside className="side-drawer drawer-left" aria-label="Conditions over time">
       <div className="drawer-header">
         <div>
-          <span className="drawer-eyebrow">Window ({slice.totalHours}h)</span>
-          <h2>Charts</h2>
+          <span className="drawer-eyebrow">{slice.totalHours} h sampled span</span>
+          <h2>Over time</h2>
         </div>
         <div className="drawer-head-actions">
           <button
@@ -250,7 +338,7 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
             type="button"
             className="btn-close-panel"
             onClick={onClose}
-            aria-label="Close charts panel"
+            aria-label="Close over time panel"
           >
             Close
           </button>
@@ -260,9 +348,10 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
       <div className="drawer-scroll">
         {excludedFreePoints && (
           <p className="muted-caption">
-            Free points are omitted: these charts need a cataloged terrain horizon. See Data for approximate point geometry.
+            Free points are omitted: these charts need a cataloged terrain horizon. See Conditions for approximate point geometry.
           </p>
         )}
+        <TerrainBasis />
         <div className="legend-strip" aria-label="Site line styles">
           {entries.map((entry) => (
             <span key={entry.label} className="legend-tag">
@@ -277,9 +366,9 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
               <div className="chart-head">
                 <h3>1. Visible Sun disk (%)</h3>
                 <span className="chart-stat">
-                  Mean{' '}
+                  Hourly sample mean{' '}
                   {entries
-                    .map((e) => `${e.label}: ${(e.metrics.meanIllumFraction * 100).toFixed(1)}%`)
+                    .map((e) => `${e.label}: ${diskPercent(e.metrics.meanIllumFraction, 1)}`)
                     .join(' | ')}
                 </span>
               </div>
@@ -325,12 +414,12 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
 
             <section className="chart-card" aria-label="Modelled visibility timeline">
               <div className="chart-head">
-                <h3>2. Modelled visibility</h3>
+                <h3>2. Sampled visibility</h3>
                 <span className="chart-stat">
                   {entries
                     .map(
                       (e) =>
-                        `${e.label}: ${e.metrics.blackoutCountCombined} gaps (max ${e.metrics.maxBlackoutCombinedHours.toFixed(0)}h)`,
+                        `${e.label}: longest sampled gap ${sampledHours(e.metrics.maxBlackoutCombinedHours)}`,
                     )
                     .join(' | ')}
                 </span>
@@ -340,7 +429,7 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
                 className="chart-svg"
                 onClick={handleSvgClick}
                 role="img"
-                aria-label="Timeline of Earth criterion, relay model criterion, and unmet visibility criteria"
+                aria-label="Hourly samples of Earth criterion, relay model criterion, and unmet visibility criteria"
               >
                 {commsTimelineRows.map(({ entry, segments }, rowIdx) => {
                   const yTop = 10 + rowIdx * 28;
@@ -351,8 +440,8 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
                       </text>
                       <rect x={left} y={yTop} width={plotW} height={18} rx={2} fill="#18181b" />
                       {segments.map((seg, idx) => {
-                        const x1 = idxToX(seg.start);
-                        const x2 = idxToX(seg.end + 0.9);
+                        const x1 = Math.min(idxToX(seg.start), left + plotW - 1.5);
+                        const x2 = idxToX(Math.min(slice.endIdx, seg.end + 0.9));
                         const fill =
                           seg.kind === 'dte' ? '#ffffff' : seg.kind === 'elfo' ? '#71717a' : '#27272a';
                         return (
@@ -384,7 +473,7 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
                 <span><i className="swatch swatch-elfo" /> {config.relayEnabled ? 'ELFO model criterion' : 'Relay model off'}</span>
                 <span><i className="swatch swatch-blk" /> {config.relayEnabled ? 'Neither criterion met' : 'Earth criterion not met'}</span>
               </div>
-              <p className="muted-caption">Visibility criteria, not a working radio link. Gaps are not service outages.</p>
+              <p className="muted-caption">Hourly criteria, not exact transition times or a working radio link. Sampled gaps are not service outages.</p>
             </section>
 
             <section className="chart-card" aria-label="360 degree sky and terrain horizon chart">
@@ -497,7 +586,7 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
           <div className="accessible-table-wrap">
             <table className="data-table">
               <caption>
-                Sampled visible Sun disk and modelled visibility criteria across the selected window ({slice.totalHours}h)
+                Selected saved samples of visible Sun disk and modelled visibility criteria · {slice.totalHours} h sampled span
               </caption>
               <thead>
                 <tr>
@@ -521,8 +610,8 @@ const TerrainCharts: React.FC<ChartsDrawerProps & { excludedFreePoints: boolean 
                         const ep = e.analysis.epochStates[idx];
                         return (
                           <React.Fragment key={e.label}>
-                            <td>{(ep.fIllum * 100).toFixed(0)}%</td>
-                            <td>{linkLabel(ep)}</td>
+                            <td>{diskPercent(ep.fIllum)}</td>
+                            <td>{visibilityStateLabel(ep, config)}</td>
                           </React.Fragment>
                         );
                       })}

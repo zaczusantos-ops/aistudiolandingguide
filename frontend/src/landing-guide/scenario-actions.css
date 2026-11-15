@@ -9,7 +9,17 @@
 }
 
 .scenario-actions p { margin: 0; }
-.scenario-actions .btn-link-sm { min-height: 44px; text-align: left; }
+.scenario-actions .btn-link-sm {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f4f4f5;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 .scenario-action-note { color: #c0c0c8; }
 .scenario-share-field { display: grid; gap: 6px; width: 100%; }
 .scenario-share-field input {

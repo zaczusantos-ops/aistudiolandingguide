@@ -3,6 +3,8 @@ import './scenario-actions.css';
 
 interface ScenarioActionsProps {
   canSearch: boolean;
+  hasLaterSamples: boolean;
+  jointSatisfied: boolean | null;
   coverageEnd: string;
   earthCriterion: string;
   searchNotice: string | null;
@@ -14,30 +16,25 @@ interface ScenarioActionsProps {
 
 /** Small actions beside the actual conditions, rather than another dashboard. */
 export function ScenarioActions({
-  canSearch, coverageEnd, earthCriterion, searchNotice, shareMessage, shareUrl, onFindNext, onShare,
+  canSearch, hasLaterSamples, jointSatisfied, coverageEnd, earthCriterion, searchNotice, shareMessage, shareUrl, onFindNext, onShare,
 }: ScenarioActionsProps) {
   return (
     <div className="scenario-actions">
-      {canSearch ? (
+      {canSearch && hasLaterSamples && jointSatisfied !== true && (
         <>
           <button type="button" className="btn-link-sm" onClick={onFindNext}>
             Find next sample with Sun and Earth
           </button>
           <p className="scenario-action-note">
             Checks later hourly samples through {coverageEnd}. Earth criterion: {earthCriterion}.
-            Visibility alone does not establish usable power or a radio link.
           </p>
         </>
-      ) : (
-        <p className="scenario-action-note">
-          Next-sample search needs a catalogued terrain horizon. Choose a site from the list.
-        </p>
       )}
+      {canSearch && !hasLaterSamples && <p className="scenario-action-note">No later samples remain in this dataset.</p>}
       {searchNotice && <p role="status">{searchNotice}</p>}
       <button type="button" className="btn-link-sm" onClick={onShare}>
         Share this scenario
       </button>
-      <p className="scenario-action-note">Shares this site, UTC, analysis window and assumptions.</p>
       {shareMessage && <p role="status">{shareMessage}</p>}
       {shareUrl && (
         <label className="scenario-share-field">

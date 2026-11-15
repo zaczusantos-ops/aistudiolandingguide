@@ -4,12 +4,14 @@
   gap: 20px;
   color: var(--ink-white, #f4f4f5);
   font-size: 1rem;
-  line-height: 1.55;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .condition-readout p,
-.condition-readout h4 {
+.condition-readout h3,
+.condition-readout h4,
+.condition-detail-content p {
   margin: 0;
 }
 
@@ -20,7 +22,7 @@
 }
 
 .condition-context strong,
-.condition-body h4 {
+.condition-body h3 {
   font-weight: 500;
 }
 
@@ -28,7 +30,8 @@
 .condition-context > span,
 .condition-angle,
 .condition-basis,
-.condition-model-note {
+.condition-model-note,
+.condition-assumptions-summary {
   color: #c0c0c8;
   font-size: 0.9375rem;
 }
@@ -36,53 +39,87 @@
 .condition-body {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
-.condition-body h4 {
+.condition-body h3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
   font-size: 1rem;
 }
 
-.condition-body h4 span {
-  display: block;
+.condition-body h3 span {
   font-weight: 400;
 }
 
-.condition-details > summary,
-.condition-source-details > summary {
+.condition-basis p + p {
+  margin-top: 6px;
+}
+
+.condition-details > summary {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 44px;
+  padding: 8px 0;
   cursor: pointer;
-  width: fit-content;
+  width: 100%;
   list-style: none;
+  font-size: 0.9375rem;
+  line-height: 1.5;
 }
 
-.condition-details > summary::before,
-.condition-source-details > summary::before {
+.condition-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.condition-details > summary::before {
   content: '+';
+  flex: 0 0 12px;
 }
 
-.condition-details[open] > summary::before,
-.condition-source-details[open] > summary::before {
+.condition-details[open] > summary::before {
   content: '−';
 }
 
 .condition-details > summary:focus-visible,
-.condition-source-details > summary:focus-visible {
-  outline: 2px solid currentColor;
+.condition-panel .condition-detail-content :is(button, input, select):focus-visible {
+  outline: 2px solid #f4f4f5;
   outline-offset: 3px;
 }
 
-.condition-details p + p {
-  margin-top: 12px;
+.condition-disclosure-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.side-drawer .condition-table-note,
-.side-drawer .condition-source-note,
-.side-drawer .condition-coordinate,
-.side-drawer .condition-source-details {
+.condition-detail-content,
+.condition-detail-section,
+.condition-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.condition-detail-content {
+  gap: 24px;
+  padding-top: 12px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.condition-detail-content h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.condition-panel .condition-table-note,
+.condition-panel .condition-source-note,
+.condition-panel .condition-coordinate,
+.condition-panel .condition-source-notes {
   margin: 0;
   color: #c0c0c8;
   font-size: 0.9375rem;
@@ -90,10 +127,47 @@
   overflow-wrap: anywhere;
 }
 
-.condition-source-details ul {
+.condition-source-notes {
   padding-left: 20px;
 }
 
-.condition-source-details li + li {
+.condition-source-notes li + li {
   margin-top: 8px;
+}
+
+.condition-panel .condition-detail-content .btn-link-sm {
+  background: transparent;
+  padding: 4px 0;
+  min-height: 44px;
+  font-size: 0.9375rem;
+}
+
+.condition-panel .field-block,
+.condition-panel .toggle-control,
+.condition-panel .data-table,
+.condition-panel .data-table caption {
+  font-size: 0.9375rem;
+}
+
+.condition-panel .field-block :is(select, input[type='number']) {
+  border: 0;
+  border-bottom: 1px solid #71717a;
+  border-radius: 0;
+  background: transparent;
+}
+
+.condition-terms {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+}
+
+.condition-terms dt {
+  font-weight: 500;
+}
+
+.condition-terms dd {
+  margin: 4px 0 0;
+  color: #c0c0c8;
 }

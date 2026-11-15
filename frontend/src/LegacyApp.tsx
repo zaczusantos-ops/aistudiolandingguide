@@ -42,6 +42,8 @@ import {
 import { TimePopover } from './landing-guide/TimePopover';
 import { buildSiteReadout } from './landing-guide/siteReadings';
 import { ScenarioActions } from './landing-guide/ScenarioActions';
+import { ViewOptions } from './landing-guide/ViewOptions';
+import './landing-guide/explorer-clean.css';
 
 const defaultDataset: NavigatorDatasetV1 = parseNavigatorDataset(rawDataset);
 
@@ -52,11 +54,6 @@ export interface AppProps {
 function getInitialAutostart(): boolean {
   if (typeof window === 'undefined') return false;
   return new URLSearchParams(window.location.search).get('autostart') === '1';
-}
-
-function detectIsMobile(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  return window.matchMedia('(max-width: 820px)').matches;
 }
 
 function createSelectedPoint(
@@ -71,6 +68,8 @@ function createSelectedPoint(
     missionWindow: dataset.mission_window,
   });
   // Keep the astronaut's existing visual scaffold separate from sky readings.
+  // Nearby chosen points must not share the scaffold's rounded display ID.
+  site.id = `custom_${geometry.center.latitude_deg}_${geometry.center.longitude_east_deg}`;
   site.center.latitude_deg = geometry.center.latitude_deg;
   site.center.longitude_east_deg = geometry.center.longitude_east_deg;
   site.sky_series = { ...site.sky_series, ...geometry.sky_series };
@@ -133,17 +132,16 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
 
   const [chartsOpen, setChartsOpen] = useState<boolean>(false);
   const [dataOpen, setDataOpen] = useState<boolean>(!!initial.scenario);
-  const [activePopover, setActivePopover] = useState<'time' | 'selection' | null>(null);
+  const [activePopover, setActivePopover] = useState<'time' | 'selection' | 'view' | null>(null);
 
   const [reticleCoords, setReticleCoords] = useState<{ latDeg: number; lonEastDeg: number }>({
     latDeg: -85,
     lonEastDeg: 12,
   });
   const [coverageNotice, setCoverageNotice] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState<boolean>(detectIsMobile);
   const [searchFeedback, setSearchFeedback] = useState<{ context: string; text: string } | null>(null);
   const [shareFeedback, setShareFeedback] = useState<{
-    context: string; url: string; message: string;
+    context: string; url: string; message: string; manualCopy: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -154,21 +152,23 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
   }, [hasStarted]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
-    const mq = window.matchMedia('(max-width: 820px)');
-    const onChange = (ev: MediaQueryListEvent) => setIsMobile(ev.matches);
-    setIsMobile(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
+    if (!hasStarted) return;
+    const panel = activePopover ? document.querySelector('[role="dialog"]')
+      : dataOpen ? document.querySelector('.condition-panel')
+        : chartsOpen ? document.querySelector('[aria-label="Conditions over time"]') : null;
+    const heading = panel?.querySelector<HTMLElement>('h2');
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+  }, [hasStarted, activePopover, dataOpen, chartsOpen]);
 
   useEffect(() => {
     if (!hasStarted) return undefined;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (activePopover !== null) {
+          document.getElementById(activePopover === 'selection' ? 'place-trigger' : `${activePopover}-trigger`)?.focus();
           setActivePopover(null);
         } else if (chartsOpen || dataOpen) {
+          document.getElementById(dataOpen ? 'conditions-trigger' : 'overtime-trigger')?.focus();
           setChartsOpen(false);
           setDataOpen(false);
         }
@@ -290,7 +290,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     setEpochIdx(nextIdx);
     setSearchFeedback({
       context: actionContext(activeEntry.slot, activeEntry.site, config, nextIdx, shiftedWindow ? nextIdx : startIdx, durationDays),
-      text: `Next matching sample: ${formatUtcShort(timestamps[nextIdx])}. Some sunlight and ${config.dteMarginMode === 'center' ? "Earth's center" : 'the whole Earth'} clear the modeled horizon. This is an hourly sample, not an exact transition time.${result.unknownSamplesBefore > 0 ? ' Earlier missing data prevent ruling out another match.' : ''}${shiftedWindow ? ' The analysis window now starts at this sample.' : ''}`,
+      text: `Showing the next matching hourly sample: ${formatUtcShort(timestamps[nextIdx])}. Exact transition time is not resolved.${result.unknownSamplesBefore > 0 ? ' Earlier data are incomplete.' : ''}${shiftedWindow ? ' The analysis period now starts here.' : ''}`,
     });
   };
 
@@ -308,18 +308,20 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     };
     try {
       const url = encodeScenarioUrl(window.location.href, state, dataset);
-      let message = 'Link ready. Copy it from the field below.';
+      let message = 'Copy the scenario link below.';
+      let manualCopy = true;
       try {
         if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(url);
           message = 'Scenario link copied.';
+          manualCopy = false;
         }
       } catch {
         // Keep a selectable link when clipboard permission is unavailable.
       }
-      setShareFeedback({ context: activeContext, url, message });
+      setShareFeedback({ context: activeContext, url, message, manualCopy });
     } catch {
-      setShareFeedback({ context: activeContext, url: '', message: 'This scenario could not be shared. Check its site, UTC and assumptions.' });
+      setShareFeedback({ context: activeContext, url: '', manualCopy: false, message: 'This scenario could not be shared. Check its site, UTC and assumptions.' });
     }
   };
 
@@ -335,7 +337,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
       setEpochIdx(sampleIdx);
     }
     setHasStarted(true);
-    setDataOpen(sampleIdx !== undefined);
+    setDataOpen(true);
     setChartsOpen(false);
     setActivePopover(null);
     if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
@@ -357,6 +359,9 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
   const handleAssignSiteAt = (slotIdx: number, siteId: string) => {
     setCoverageNotice(null);
     setSlots((prev) => setSiteSlotAt(prev, slotIdx, siteId));
+    setActivePopover(null);
+    setChartsOpen(false);
+    setDataOpen(true);
   };
 
   const handleCoordinatePick = (
@@ -374,9 +379,10 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     }
     setCustomSites((prev) => ({ ...prev, [customSite.id]: customSite }));
     setSlots((prev) => setSiteSlotAt(prev, slotIdx, customSite.id));
-    setCoverageNotice(
-      `Unvisited pin dropped at ${customSite.name}. Sky geometry is approximate; local terrain obstruction, energy and relay availability are not assessed. Rendered relief is visual context.`,
-    );
+    setActivePopover(null);
+    setChartsOpen(false);
+    setDataOpen(true);
+    setCoverageNotice(null);
   };
 
   const handleAddSlot = () => {
@@ -388,6 +394,9 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
       }
       return next;
     });
+    setChartsOpen(false);
+    setDataOpen(false);
+    setActivePopover('selection');
   };
 
   const handleRemoveSlot = (idx: number) => {
@@ -435,7 +444,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
   const toggleCharts = () => {
     setChartsOpen((prev) => {
       const next = !prev;
-      if (next && isMobile) {
+      if (next) {
         setDataOpen(false);
         setActivePopover(null);
       }
@@ -446,7 +455,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
   const toggleData = () => {
     setDataOpen((prev) => {
       const next = !prev;
-      if (next && isMobile) {
+      if (next) {
         setChartsOpen(false);
         setActivePopover(null);
       }
@@ -454,10 +463,11 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     });
   };
 
-  const togglePopover = (pop: 'time' | 'selection') => {
+  const togglePopover = (pop: 'time' | 'selection' | 'view') => {
     setActivePopover((prev) => {
       const next = prev === pop ? null : pop;
-      if (next && isMobile) {
+      if (next) {
+        setIsPlaying(false);
         setChartsOpen(false);
         setDataOpen(false);
       }
@@ -473,7 +483,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
   };
 
   return (
-    <div className="guide-shell" data-started={hasStarted ? 'true' : 'false'}>
+    <div className="guide-shell guide-shell--clean" data-started={hasStarted ? 'true' : 'false'}>
       {scenarioError && (
         <div className="floating-notice" role="alert">
           <span>Could not open shared scenario: {scenarioError} Choose a site and UTC to continue.</span>
@@ -527,41 +537,28 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               type="button"
               className="hud-btn hud-btn-muted"
               onClick={handleReturnToBrief}
-              aria-label="Return to Mission Brief"
+              aria-label="Return to overview"
             >
               <span aria-hidden="true">←</span>
-              <span>Brief</span>
+              <span>Overview</span>
             </button>
             <button
               type="button"
               className={`hud-btn ${chartsOpen ? 'active' : ''}`}
+              id="overtime-trigger"
               aria-expanded={chartsOpen}
               onClick={toggleCharts}
             >
-              <span>Charts</span>
+              <span>Over time</span>
             </button>
           </div>
 
           {/* Top-Center: Moon | Topography */}
           <div className="hud-top-center">
-            <div className="surface-switch-pill" role="group" aria-label="Surface display mode">
-              <button
-                type="button"
-                className={`hud-seg-btn ${surfaceMode === 'realistic' ? 'active' : ''}`}
-                aria-pressed={surfaceMode === 'realistic'}
-                onClick={() => setSurfaceMode('realistic')}
-              >
-                Moon
-              </button>
-              <button
-                type="button"
-                className={`hud-seg-btn ${surfaceMode === 'topography' ? 'active' : ''}`}
-                aria-pressed={surfaceMode === 'topography'}
-                onClick={() => setSurfaceMode('topography')}
-              >
-                Topography
-              </button>
-            </div>
+            <button type="button" className={`hud-btn ${activePopover === 'view' ? 'active' : ''}`}
+              id="view-trigger" aria-expanded={activePopover === 'view'} onClick={() => togglePopover('view')}>
+              View
+            </button>
 
             {surfaceMode === 'topography' && (
               <div className="topo-legend-bar" role="region" aria-label="Topographic elevation scale in kilometers">
@@ -581,10 +578,11 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
             <button
               type="button"
               className={`hud-btn ${activePopover === 'selection' ? 'active' : ''}`}
+              id="place-trigger"
               aria-expanded={activePopover === 'selection'}
               onClick={() => togglePopover('selection')}
             >
-              <span>Sites ({entries.length})</span>
+              <span>{entries.length === 1 ? 'Place' : `Places (${entries.length})`}</span>
             </button>
           </div>
 
@@ -624,9 +622,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                           }
                         }}
                       >
-                        <span className="ab-chip" aria-hidden="true">
-                          {entry.label}
-                        </span>
+                        {entries.length > 1 && <span className="ab-chip" aria-hidden="true">{entry.label}</span>}
                         <div className="ab-card-text">
                           <strong>{entry.site.name}</strong>
                           <span>
@@ -653,36 +649,14 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                     type="button"
                     className="ab-add-btn"
                     onClick={handleAddSlot}
-                    aria-label="Add comparison site"
+                    aria-label={entries.length === 1 ? "Compare places" : "Add comparison place"}
                   >
-                    + Site
+                    {entries.length === 1 ? 'Compare' : '+ Place'}
                   </button>
                 )}
               </div>
             </div>
           )}
-
-          {/* Bottom-Left: Orbit 3D / Astronaut */}
-          <div className="hud-corner hud-bottom-left">
-            <div className="mode-switch-pill" role="group" aria-label="Switch Orbit 3D and Astronaut surface view">
-              <button
-                type="button"
-                className={`hud-seg-btn ${viewportMode === '3d' ? 'active' : ''}`}
-                aria-pressed={viewportMode === '3d'}
-                onClick={() => setViewportMode('3d')}
-              >
-                Orbit 3D
-              </button>
-              <button
-                type="button"
-                className={`hud-seg-btn ${viewportMode === 'astronaut' ? 'active' : ''}`}
-                aria-pressed={viewportMode === 'astronaut'}
-                onClick={() => setViewportMode('astronaut')}
-              >
-                Astronaut
-              </button>
-            </div>
-          </div>
 
           {/* Bottom-Center: Time (UTC) */}
           <div className="hud-bottom-center">
@@ -690,6 +664,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               <button
                 type="button"
                 className={`time-pill-trigger ${activePopover === 'time' ? 'active' : ''}`}
+                id="time-trigger"
                 aria-expanded={activePopover === 'time'}
                 onClick={() => togglePopover('time')}
               >
@@ -697,7 +672,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               </button>
               <div className="time-pill-readout">
                 <strong>{formatUtcShort(currentUtc)}</strong>
-                <span>{durationDays}d window</span>
+                <span>{slice.epochCount < 2 ? "One saved instant" : `${slice.totalHours}h analysis period`}</span>
               </div>
               <button
                 type="button"
@@ -715,17 +690,21 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
             <button
               type="button"
               className={`hud-btn ${dataOpen ? 'active' : ''}`}
+              id="conditions-trigger"
               aria-expanded={dataOpen}
               onClick={toggleData}
             >
-              <span>Data</span>
-              <span className="hud-badge" aria-label={`${entries.length} selected sites`}>
-                {entries.length}
-              </span>
+              <span>Conditions</span>
             </button>
           </div>
 
           {/* Popovers */}
+          {activePopover === 'view' && (
+            <ViewOptions viewportMode={viewportMode} surfaceMode={surfaceMode}
+              onChangeViewport={(mode) => { setViewportMode(mode); setActivePopover(null); document.getElementById('view-trigger')?.focus(); }}
+              onChangeSurface={setSurfaceMode}
+              onClose={() => { setActivePopover(null); document.getElementById('view-trigger')?.focus(); }} />
+          )}
           {activePopover === 'time' && (
             <TimePopover
               timestampsUtc={dataset.mission_window.timestamps_utc}
@@ -743,11 +722,16 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                 setIsPlaying(false);
                 setEpochIdx(idx);
               }}
-              onChangeDuration={(days) => setDurationDays(days)}
+              onChangeDuration={(days) => {
+                setIsPlaying(false);
+                const proposed = computeWindowSlice(dataset.mission_window.timestamps_utc, startIdx, days);
+                if (clampedEpochIdx > proposed.endIdx) setStartIdx(clampedEpochIdx);
+                setDurationDays(days);
+              }}
               onTogglePlay={() => setIsPlaying((p) => !p)}
               onResetTime={handleResetTime}
               onChangeSpeed={(sp) => setSpeed(sp)}
-              onClose={() => setActivePopover(null)}
+              onClose={() => { setActivePopover(null); document.getElementById('time-trigger')?.focus(); }}
             />
           )}
 
@@ -790,7 +774,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                 setIsPlaying(false);
                 setEpochIdx(idx);
               }}
-              onClose={() => setChartsOpen(false)}
+              onClose={() => { setChartsOpen(false); document.getElementById('overtime-trigger')?.focus(); }}
             />
           )}
 
@@ -802,6 +786,8 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               onSelectActiveSlot={setActiveSlotIdx}
               summary={plainSummary}
               slice={slice}
+              periodStartUtc={dataset.mission_window.timestamps_utc[slice.startIdx]}
+              periodEndUtc={dataset.mission_window.timestamps_utc[slice.endIdx]}
               config={config}
               provenance={dataset.provenance}
               onChangeOffset={handleChangeOffset}
@@ -809,16 +795,18 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               scenarioActions={(
                 <ScenarioActions
                   canSearch={readouts[safeActiveIdx]?.kind === 'terrain'}
+                  hasLaterSamples={clampedEpochIdx + 1 < dataset.mission_window.timestamps_utc.length}
+                  jointSatisfied={readouts[safeActiveIdx]?.jointVisibilitySatisfied ?? null}
                   coverageEnd={formatUtcShort(dataset.mission_window.timestamps_utc[dataset.mission_window.timestamps_utc.length - 1])}
                   earthCriterion={config.dteMarginMode === 'center' ? 'center above the horizon' : 'whole disk above the horizon'}
                   searchNotice={searchFeedback?.context === activeContext ? searchFeedback.text : null}
                   shareMessage={shareFeedback?.context === activeContext ? shareFeedback.message : null}
-                  shareUrl={shareFeedback?.context === activeContext ? shareFeedback.url || null : null}
+                  shareUrl={shareFeedback?.context === activeContext && shareFeedback.manualCopy ? shareFeedback.url || null : null}
                   onFindNext={handleFindNext}
                   onShare={handleShare}
                 />
               )}
-              onClose={() => setDataOpen(false)}
+              onClose={() => { setDataOpen(false); document.getElementById('conditions-trigger')?.focus(); }}
             />
           )}
         </>

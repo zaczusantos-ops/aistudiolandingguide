@@ -119,7 +119,6 @@ export const HomeOverlay: React.FC<HomeOverlayProps> = ({ sites, missionWindow, 
           <button type="button" className="brief-nav-link" onClick={() => scrollToSection('mission')}>South Pole</button>
           <button type="button" className="brief-nav-link" onClick={() => scrollToSection('energy')}>Sunlight</button>
           <button type="button" className="brief-nav-link" onClick={() => scrollToSection('comms')}>Earth view</button>
-          <button type="button" className="brief-nav-cta" onClick={() => onStart()}>Open Explorer</button>
         </div>
       </nav>
 
@@ -267,17 +266,7 @@ export const HomeOverlay: React.FC<HomeOverlayProps> = ({ sites, missionWindow, 
         </div>
       </section>
 
-      <section id="explore" className="editorial-section section-dark section-launch" aria-labelledby="launch-heading">
-        <div className="section-container launch-inner">
-          <h2 id="launch-heading" className="section-heading">Choose a place. Then a time.</h2>
-          <p className="section-body launch-copy">Use a named site for terrain-based estimates, or choose a point for approximate Sun and Earth directions. The 3D relief is a visual reference; it does not determine local obstruction at a chosen point.</p>
-          <div className="hero-actions">
-            <button type="button" className="btn-bw-primary" onClick={() => onStart()}>
-              <span>Open Explorer</span><span aria-hidden="true">→</span>
-            </button>
-          </div>
-        </div>
-      </section>
+
     </div>
   );
 };
