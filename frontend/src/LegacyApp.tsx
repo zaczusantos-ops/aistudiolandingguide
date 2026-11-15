@@ -44,6 +44,7 @@ import { buildSiteReadout } from './landing-guide/siteReadings';
 import { ScenarioActions } from './landing-guide/ScenarioActions';
 import { ViewOptions } from './landing-guide/ViewOptions';
 import './landing-guide/explorer-clean.css';
+import './landing-guide/fpv-walk.css';
 
 const defaultDataset: NavigatorDatasetV1 = parseNavigatorDataset(rawDataset);
 
@@ -489,6 +490,15 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
     setEpochIdx(0);
   };
 
+  const handleChangeViewport = (mode: ViewportMode) => {
+    setIsPlaying(false);
+    setChartsOpen(false);
+    setDataOpen(false);
+    setActivePopover(null);
+    setViewportMode(mode);
+    if (mode === '3d') requestAnimationFrame(() => document.getElementById('view-trigger')?.focus());
+  };
+
   return (
     <div className="guide-shell guide-shell--clean" data-started={hasStarted ? 'true' : 'false'}>
       {scenarioError && (
@@ -521,11 +531,8 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
         <AstronautViewport
           entries={entries}
           activeSlotIdx={safeActiveIdx}
-          onSelectActiveSlot={setActiveSlotIdx}
-          surfaceMode={surfaceMode}
           epochIdx={clampedEpochIdx}
-          config={config}
-          chartsOpen={chartsOpen}
+          onExit={() => handleChangeViewport('3d')}
         />
       )}
 
@@ -538,7 +545,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
         />
       )}
 
-      {hasStarted && (
+      {hasStarted && viewportMode === '3d' && (
         <>
           {/* Top-Left: Brief & Charts */}
           <div className="hud-corner hud-top-left">
@@ -710,7 +717,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
           {/* Popovers */}
           {activePopover === 'view' && (
             <ViewOptions viewportMode={viewportMode} surfaceMode={surfaceMode}
-              onChangeViewport={(mode) => { setViewportMode(mode); setActivePopover(null); document.getElementById('view-trigger')?.focus(); }}
+              onChangeViewport={handleChangeViewport}
               onChangeSurface={setSurfaceMode}
               onClose={() => { setActivePopover(null); document.getElementById('view-trigger')?.focus(); }} />
           )}

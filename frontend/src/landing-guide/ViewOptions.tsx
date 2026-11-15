@@ -21,7 +21,7 @@ export function ViewOptions({ viewportMode, surfaceMode, onChangeViewport, onCha
         <span>Perspective</span>
         <select aria-label="Perspective" value={viewportMode} onChange={event => onChangeViewport(event.target.value as ViewportMode)}>
           <option value="3d">Moon globe</option>
-          <option value="astronaut">Surface view</option>
+          <option value="astronaut">Surface walk (illustrative)</option>
         </select>
       </label>
       <label className="field-block">

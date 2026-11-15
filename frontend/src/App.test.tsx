@@ -215,8 +215,9 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Perspective' }), { target: { value: 'astronaut' } });
     expect(screen.getByTestId('astronaut-stage')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Look Sun/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Look Earth/i })).toBeInTheDocument();
+    expect(screen.getByRole('application')).toHaveAccessibleName(/illustrative Moon walk/i);
+    expect(screen.queryByRole('button', { name: 'Conditions' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Orbit 3D view' }));
     fireEvent.click(screen.getByRole('button', { name: 'Conditions' }));
     fireEvent.click(screen.getByText('Angles, assumptions and sources'));
     expect(screen.getByText(/16 epochs at one location/i)).toBeInTheDocument();
