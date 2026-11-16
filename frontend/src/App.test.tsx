@@ -236,12 +236,42 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
       'malapert_massif',
     );
 
+    // Astronaut view: first-person stage with only the illustrative overlay; the explorer HUD is hidden.
     fireEvent.click(screen.getByRole('button', { name: 'Astronaut' }));
-    expect(screen.getByRole('button', { name: 'Astronaut' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('astronaut-stage')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Look Sun/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Look Earth/i })).toBeInTheDocument();
+    const nakamura = screen.getByRole('button', { name: /^Nakamura 1979\b/ });
+    const lognonne = screen.getByRole('button', { name: /^Lognonné 2003\b/ });
+    for (const pill of [nakamura, lognonne]) {
+      expect(pill).toHaveAccessibleName(/illustrative/i);
+      expect(pill).toHaveAccessibleName(/not catalog data/i);
+      expect(pill.textContent ?? '').not.toMatch(/magnitude|\bM\s?\d/i);
+      fireEvent.click(pill); // purely visual tremor; must not throw without WebGL
+    }
+    const lightingNote = screen.getByText(/Illustrative lighting/i);
+    expect(lightingNote).toHaveAttribute('title', expect.stringMatching(/drawn 10° above the horizon/));
+    expect(lightingNote).toHaveTextContent(/dataset Sun elevation at this time: -?\d+\.\d°/);
+    expect(screen.getByTestId('fpv-stick-left')).toBeInTheDocument();
+    expect(screen.getByTestId('fpv-stick-right')).toBeInTheDocument();
+    for (const name of [/Return to Mission Brief/i, /^Charts$/i, /^Data/i, /Sites \(/i, /^Time$/i, /^Moon$/, /^Topography$/, /^Astronaut$/]) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByLabelText(/Selected lunar sites/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Look Sun/i })).not.toBeInTheDocument();
 
+    // The small exit control returns to Orbit 3D with the HUD restored.
+    fireEvent.click(screen.getByRole('button', { name: /Return to Orbit 3D/i }));
+    expect(screen.queryByTestId('astronaut-stage')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Orbit 3D' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Astronaut' })).toHaveAttribute('aria-pressed', 'false');
+
+    // Esc (without Pointer Lock) also leaves the Astronaut view.
+    fireEvent.click(screen.getByRole('button', { name: 'Astronaut' }));
+    expect(screen.getByTestId('astronaut-stage')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
+    expect(screen.queryByTestId('astronaut-stage')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Return to Mission Brief/i })).toBeInTheDocument();
+
+    // Data drawer coverage, opened in Orbit 3D mode.
     fireEvent.click(screen.getByRole('button', { name: /^Data/i }));
     expect(screen.getByText(/Comparing 3 lunar sites/i)).toBeInTheDocument();
     expect(screen.getByText(/Where am I looking\?/i)).toBeInTheDocument();
@@ -255,6 +285,8 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     expect(advToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(/NASA Sources & JPL Horizons Cross-Validation/i)).toBeInTheDocument();
 
+    // Entering the Astronaut view closed the Sites popover; reopen it to reset the comparison.
+    fireEvent.click(screen.getByRole('button', { name: /Sites \(3\)/i }));
     fireEvent.click(screen.getByRole('button', { name: /Single site only/i }));
     expect(screen.getByRole('button', { name: /Sites \(1\)/i })).toBeInTheDocument();
   });

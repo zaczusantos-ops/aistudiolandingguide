@@ -49,6 +49,11 @@ function getInitialAutostart(): boolean {
   return new URLSearchParams(window.location.search).get('autostart') === '1';
 }
 
+function getInitialViewportMode(): ViewportMode {
+  if (typeof window === 'undefined') return '3d';
+  return new URLSearchParams(window.location.search).get('view') === 'astronaut' ? 'astronaut' : '3d';
+}
+
 function detectIsMobile(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia('(max-width: 820px)').matches;
@@ -56,7 +61,7 @@ function detectIsMobile(): boolean {
 
 export function App({ dataset = defaultDataset }: AppProps) {
   const [hasStarted, setHasStarted] = useState<boolean>(getInitialAutostart);
-  const [viewportMode, setViewportMode] = useState<ViewportMode>('3d');
+  const [viewportMode, setViewportMode] = useState<ViewportMode>(getInitialViewportMode);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('realistic');
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('cursor');
 
@@ -323,6 +328,14 @@ export function App({ dataset = defaultDataset }: AppProps) {
     });
   };
 
+  const handleEnterAstronaut = () => {
+    // The explorer HUD is hidden while walking; close its drawers so Orbit 3D comes back clean.
+    setChartsOpen(false);
+    setDataOpen(false);
+    setActivePopover(null);
+    setViewportMode('astronaut');
+  };
+
   const handleResetTime = () => {
     setIsPlaying(false);
     setStartIdx(0);
@@ -349,16 +362,13 @@ export function App({ dataset = defaultDataset }: AppProps) {
         reticleCoords={reticleCoords}
       />
 
-      {/* 1st-Person Astronaut Surface View */}
+      {/* 1st-Person Astronaut Surface View (the explorer HUD is hidden while walking) */}
       {hasStarted && viewportMode === 'astronaut' && (
         <AstronautViewport
           entries={entries}
           activeSlotIdx={safeActiveIdx}
-          onSelectActiveSlot={setActiveSlotIdx}
-          surfaceMode={surfaceMode}
           epochIdx={clampedEpochIdx}
-          config={config}
-          chartsOpen={chartsOpen}
+          onExit={() => setViewportMode('3d')}
         />
       )}
 
@@ -371,7 +381,7 @@ export function App({ dataset = defaultDataset }: AppProps) {
         />
       )}
 
-      {hasStarted && (
+      {hasStarted && viewportMode === '3d' && (
         <>
           {/* Top-Left: Brief & Charts */}
           <div className="hud-corner hud-top-left">
@@ -454,7 +464,7 @@ export function App({ dataset = defaultDataset }: AppProps) {
           )}
 
           {/* Minimal 1..4 Site Dock above bottom bar (Orbit 3D mode) */}
-          {viewportMode === '3d' && !chartsOpen && !dataOpen && activePopover === null && (
+          {!chartsOpen && !dataOpen && activePopover === null && (
             <div className="ab-floating-dock" aria-label="Selected lunar sites">
               <div className="ab-dock-row">
                 {entries.map((entry, idx) => {
@@ -517,23 +527,14 @@ export function App({ dataset = defaultDataset }: AppProps) {
             </div>
           )}
 
-          {/* Bottom-Left: Orbit 3D / Astronaut */}
+          {/* Bottom-Left: Orbit 3D / Astronaut (this HUD only renders in Orbit 3D; the Astronaut
+              view has its own small "Orbit 3D" exit control + Esc) */}
           <div className="hud-corner hud-bottom-left">
             <div className="mode-switch-pill" role="group" aria-label="Switch Orbit 3D and Astronaut surface view">
-              <button
-                type="button"
-                className={`hud-seg-btn ${viewportMode === '3d' ? 'active' : ''}`}
-                aria-pressed={viewportMode === '3d'}
-                onClick={() => setViewportMode('3d')}
-              >
+              <button type="button" className="hud-seg-btn active" aria-pressed="true">
                 Orbit 3D
               </button>
-              <button
-                type="button"
-                className={`hud-seg-btn ${viewportMode === 'astronaut' ? 'active' : ''}`}
-                aria-pressed={viewportMode === 'astronaut'}
-                onClick={() => setViewportMode('astronaut')}
-              >
+              <button type="button" className="hud-seg-btn" aria-pressed="false" onClick={handleEnterAstronaut}>
                 Astronaut
               </button>
             </div>
