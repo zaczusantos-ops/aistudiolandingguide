@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './fonts.css';
 import './style.css';
 import './startup.css';
+import { prefetchRealNasaLunarAtlas } from './landing-guide/lunarTerrainEngine';
 
 const App = lazy(() => import('./LegacyApp').then(module => ({ default: module.LegacyApp })));
 function Startup({ failed = false }: { failed?: boolean }) {
@@ -13,4 +14,5 @@ class StartupBoundary extends React.Component<React.PropsWithChildren, { failed:
   static getDerivedStateFromError() { return { failed: true }; }
   render() { return this.state.failed ? <Startup failed /> : this.props.children; }
 }
+prefetchRealNasaLunarAtlas();
 createRoot(document.getElementById('root')!).render(<React.StrictMode><StartupBoundary><Suspense fallback={<Startup />}><App /></Suspense></StartupBoundary></React.StrictMode>);

@@ -825,26 +825,49 @@ export function buildLunarAtlasData(
   };
 }
 
-function loadImagePixels(url: string): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
+/** Decoded RGBA pixels of one bundled image. */
+export interface DecodedImagePixels {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
+const REAL_ATLAS_URLS = [
+  '/assets/lunar/lroc_color_2k.jpg',
+  '/assets/lunar/ldem_global_2k.png',
+  '/assets/lunar/ldem_south_pole_1k.png',
+] as const;
+
+function loadImagePixels(url: string): Promise<DecodedImagePixels> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const w = img.naturalWidth || img.width;
-      const h = img.naturalHeight || img.height;
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error(`Could not allocate 2D canvas context for ${url}`));
-        return;
+      let canvas: HTMLCanvasElement | undefined;
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error(`Could not allocate 2D canvas context for ${url}`);
+        ctx.drawImage(img, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        resolve({ width: w, height: h, data: imageData.data });
+      } catch (error) {
+        reject(error);
+      } finally {
+        img.onload = null;
+        img.onerror = null;
+        if (canvas) canvas.width = canvas.height = 0;
       }
-      ctx.drawImage(img, 0, 0, w, h);
-      const imageData = ctx.getImageData(0, 0, w, h);
-      resolve({ width: w, height: h, data: imageData.data });
     };
-    img.onerror = () => reject(new Error(`Failed to load NASA lunar asset: ${url}`));
+    img.onerror = () => {
+      img.onload = null;
+      img.onerror = null;
+      reject(new Error(`Failed to load NASA lunar asset: ${url}`));
+    };
     img.src = url;
   });
 }
@@ -858,6 +881,145 @@ function decodePackedElevationKm(rgba: Uint8ClampedArray, len: number): Float32A
     out[i] = MIN_ELEV_KM + (q16 / 65535) * range;
   }
   return out;
+}
+
+/** Derives the real NASA atlas from decoded pixels, shared by the main thread and the atlas worker. */
+export function deriveRealNasaAtlas(
+  albedoImg: DecodedImagePixels,
+  globalDemImg: DecodedImagePixels,
+  polarDemImg: DecodedImagePixels,
+): LunarAtlasData {
+  const w = globalDemImg.width;
+  const h = globalDemImg.height;
+  const heightKmTopNorth = decodePackedElevationKm(globalDemImg.data, w * h);
+  const polarHeightKm = decodePackedElevationKm(
+    polarDemImg.data,
+    polarDemImg.width * polarDemImg.height,
+  );
+
+  const albedoBottomSouth = new Uint8Array(w * h * 4);
+  for (let py = 0; py < h; py++) {
+    const srcY = Math.min(
+      albedoImg.height - 1,
+      Math.max(0, Math.round(((h - 1 - py) / (h - 1)) * (albedoImg.height - 1))),
+    );
+    for (let px = 0; px < w; px++) {
+      const srcX = Math.min(
+        albedoImg.width - 1,
+        Math.round((px / w) * albedoImg.width),
+      );
+      const sIdx = (srcY * albedoImg.width + srcX) * 4;
+      const dIdx = (py * w + px) * 4;
+      albedoBottomSouth[dIdx] = albedoImg.data[sIdx];
+      albedoBottomSouth[dIdx + 1] = albedoImg.data[sIdx + 1];
+      albedoBottomSouth[dIdx + 2] = albedoImg.data[sIdx + 2];
+      albedoBottomSouth[dIdx + 3] = 255;
+    }
+  }
+
+  const derived = buildDerivedAtlasMaps(
+    w,
+    h,
+    heightKmTopNorth,
+    polarDemImg.width,
+    polarHeightKm,
+    albedoBottomSouth,
+  );
+
+  return {
+    width: w,
+    height: h,
+    isRealNasa: true,
+    heightKm: heightKmTopNorth,
+    polarWidth: polarDemImg.width,
+    polarHeightKm,
+    albedoRgba: derived.albedoRgba,
+    topoRgba: derived.topoRgba,
+    normalRgba: derived.normalRgba,
+    dispRgba: derived.dispRgba,
+    southCapWidth: derived.southCapWidth,
+    southCapAlbedoRgba: derived.southCapAlbedoRgba,
+    southCapTopoRgba: derived.southCapTopoRgba,
+    southCapNormalRgba: derived.southCapNormalRgba,
+    northCapWidth: derived.northCapWidth,
+    northCapAlbedoRgba: derived.northCapAlbedoRgba,
+    northCapTopoRgba: derived.northCapTopoRgba,
+    northCapNormalRgba: derived.northCapNormalRgba,
+  };
+}
+
+/** Distinct buffers backing an atlas, for transferring it out of a worker without copies. */
+export function atlasTransferables(atlas: LunarAtlasData): ArrayBuffer[] {
+  const arrays = [
+    atlas.heightKm,
+    atlas.polarHeightKm,
+    atlas.albedoRgba,
+    atlas.topoRgba,
+    atlas.normalRgba,
+    atlas.dispRgba,
+    atlas.southCapAlbedoRgba,
+    atlas.southCapTopoRgba,
+    atlas.southCapNormalRgba,
+    atlas.northCapAlbedoRgba,
+    atlas.northCapTopoRgba,
+    atlas.northCapNormalRgba,
+  ];
+  const buffers = new Set<ArrayBuffer>();
+  for (const array of arrays) {
+    if (array) buffers.add(array.buffer as ArrayBuffer);
+  }
+  return [...buffers];
+}
+
+/** Decodes and derives the atlas on the calling thread, the original path and the worker fallback. */
+export function loadRealNasaLunarAtlasOnMainThread(): Promise<LunarAtlasData> {
+  return Promise.all(REAL_ATLAS_URLS.map(loadImagePixels)).then(([albedoImg, globalDemImg, polarDemImg]) =>
+    deriveRealNasaAtlas(albedoImg, globalDemImg, polarDemImg),
+  );
+}
+
+/** Decodes and derives the atlas in a module worker so the page stays responsive meanwhile. */
+export function loadRealNasaLunarAtlasInWorker(): Promise<LunarAtlasData> {
+  if (
+    typeof Worker === 'undefined' ||
+    typeof OffscreenCanvas === 'undefined' ||
+    typeof createImageBitmap === 'undefined'
+  ) {
+    return Promise.reject(new Error('Worker image decoding is unavailable'));
+  }
+  return new Promise((resolve, reject) => {
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('./atlasWorker.ts', import.meta.url), { type: 'module' });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    let settled = false;
+    const finish = (atlas: LunarAtlasData | null, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
+      worker.terminate();
+      if (atlas) resolve(atlas);
+      else reject(error ?? new Error('Atlas worker failed'));
+    };
+    worker.onmessage = (event: MessageEvent<{ atlas?: LunarAtlasData; error?: string }>) => {
+      finish(event.data?.atlas ?? null, new Error(event.data?.error ?? 'Atlas worker failed'));
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      finish(null, new Error(event.message || 'Atlas worker failed'));
+    };
+    worker.onmessageerror = () => finish(null, new Error('Could not decode the atlas worker response'));
+    try {
+      worker.postMessage({ urls: REAL_ATLAS_URLS.map((url) => new URL(url, window.location.href).href) });
+    } catch (error) {
+      finish(null, error);
+    }
+  });
 }
 
 let cachedRealAtlasPromise: Promise<LunarAtlasData> | null = null;
@@ -875,72 +1037,25 @@ export function getLoadedRealAtlasSync(): LunarAtlasData | null {
  */
 export function loadRealNasaLunarAtlas(): Promise<LunarAtlasData> {
   if (cachedRealAtlasPromise) return cachedRealAtlasPromise;
-
-  cachedRealAtlasPromise = Promise.all([
-    loadImagePixels('/assets/lunar/lroc_color_2k.jpg'),
-    loadImagePixels('/assets/lunar/ldem_global_2k.png'),
-    loadImagePixels('/assets/lunar/ldem_south_pole_1k.png'),
-  ]).then(([albedoImg, globalDemImg, polarDemImg]) => {
-    const w = globalDemImg.width;
-    const h = globalDemImg.height;
-    const heightKmTopNorth = decodePackedElevationKm(globalDemImg.data, w * h);
-    const polarHeightKm = decodePackedElevationKm(
-      polarDemImg.data,
-      polarDemImg.width * polarDemImg.height,
+  // A failed load clears the shared cache so a later mount (orbital or astronaut) can retry.
+  const job: Promise<LunarAtlasData> = loadRealNasaLunarAtlasInWorker()
+    .catch(() => loadRealNasaLunarAtlasOnMainThread())
+    .then(
+      (atlas) => {
+        if (cachedRealAtlasPromise === job) cachedRealAtlasSync = atlas;
+        return atlas;
+      },
+      (error: unknown) => {
+        if (cachedRealAtlasPromise === job) cachedRealAtlasPromise = null;
+        throw error;
+      },
     );
+  cachedRealAtlasPromise = job;
+  return job;
+}
 
-    const albedoBottomSouth = new Uint8Array(w * h * 4);
-    for (let py = 0; py < h; py++) {
-      const srcY = Math.min(
-        albedoImg.height - 1,
-        Math.max(0, Math.round(((h - 1 - py) / (h - 1)) * (albedoImg.height - 1))),
-      );
-      for (let px = 0; px < w; px++) {
-        const srcX = Math.min(
-          albedoImg.width - 1,
-          Math.round((px / w) * albedoImg.width),
-        );
-        const sIdx = (srcY * albedoImg.width + srcX) * 4;
-        const dIdx = (py * w + px) * 4;
-        albedoBottomSouth[dIdx] = albedoImg.data[sIdx];
-        albedoBottomSouth[dIdx + 1] = albedoImg.data[sIdx + 1];
-        albedoBottomSouth[dIdx + 2] = albedoImg.data[sIdx + 2];
-        albedoBottomSouth[dIdx + 3] = 255;
-      }
-    }
-
-    const derived = buildDerivedAtlasMaps(
-      w,
-      h,
-      heightKmTopNorth,
-      polarDemImg.width,
-      polarHeightKm,
-      albedoBottomSouth,
-    );
-
-    const resolved: LunarAtlasData = {
-      width: w,
-      height: h,
-      isRealNasa: true,
-      heightKm: heightKmTopNorth,
-      polarWidth: polarDemImg.width,
-      polarHeightKm,
-      albedoRgba: derived.albedoRgba,
-      topoRgba: derived.topoRgba,
-      normalRgba: derived.normalRgba,
-      dispRgba: derived.dispRgba,
-      southCapWidth: derived.southCapWidth,
-      southCapAlbedoRgba: derived.southCapAlbedoRgba,
-      southCapTopoRgba: derived.southCapTopoRgba,
-      southCapNormalRgba: derived.southCapNormalRgba,
-      northCapWidth: derived.northCapWidth,
-      northCapAlbedoRgba: derived.northCapAlbedoRgba,
-      northCapTopoRgba: derived.northCapTopoRgba,
-      northCapNormalRgba: derived.northCapNormalRgba,
-    };
-    cachedRealAtlasSync = resolved;
-    return resolved;
-  });
-
-  return cachedRealAtlasPromise;
+/** Starts the atlas early when it can be built off the main thread, so startup is not blocked. */
+export function prefetchRealNasaLunarAtlas(): void {
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return;
+  loadRealNasaLunarAtlas().catch(() => undefined);
 }
