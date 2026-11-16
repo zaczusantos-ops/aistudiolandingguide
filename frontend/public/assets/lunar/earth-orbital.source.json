@@ -1,0 +1,76 @@
+{
+  "title": "The Blue Marble: Land Surface, Ocean Color and Sea Ice",
+  "source_url": "https://assets.science.nasa.gov/content/dam/science/esd/eo/content-feature/bluemarble/images/land_ocean_ice_2048.jpg",
+  "source_page": "https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/",
+  "legacy_record": "https://visibleearth.nasa.gov/view.php?id=57730",
+  "credit": "NASA Goddard Space Flight Center. Image by Reto Stöckli; enhancements by Robert Simmon.",
+  "credit_details": {
+    "Reto Stöckli": [
+      "land surface",
+      "shallow water",
+      "clouds in the wider Blue Marble collection"
+    ],
+    "Robert Simmon": [
+      "ocean color",
+      "compositing",
+      "3D globes and animation in the wider collection"
+    ],
+    "data_and_technical_support": [
+      "MODIS Land Group",
+      "MODIS Science Data Support Team",
+      "MODIS Atmosphere Group",
+      "MODIS Ocean Group"
+    ],
+    "additional_collection_data": [
+      "USGS EROS Data Center",
+      "USGS Terrestrial Remote Sensing Flagstaff Field Center",
+      "Defense Meteorological Satellite Program"
+    ]
+  },
+  "date": {
+    "product_year": 2002,
+    "collection_article_published": "2002-05-26",
+    "underlying_land_and_coastal_observations": "June–September 2001, composited to reduce cloud obstruction",
+    "server_last_modified": "2023-12-14T03:01:58Z",
+    "note": "The server modification date is not an observation date."
+  },
+  "format": "JPEG",
+  "asset_type": "Global equirectangular UV surface map, not a photograph of a circular disk",
+  "projection": {
+    "name": "equirectangular",
+    "aspect_ratio": "2:1",
+    "longitude_west_to_east_degrees": [
+      -180,
+      180
+    ],
+    "latitude_top_to_bottom_degrees": [
+      90,
+      -90
+    ],
+    "prime_meridian_x_fraction": 0.5,
+    "north_is_up": true
+  },
+  "recommended_use": "Base-color imagery on a sphere with independently computed illumination; use an sRGB texture color space.",
+  "rights": {
+    "statement": "NASA Earth Observatory makes this Blue Marble collection freely available for education, science, museums and public use. Retain the credit and follow NASA media usage guidelines; no endorsement is implied.",
+    "policy_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+  },
+  "appearance_limits": [
+    "Static composite from multiple observations, not a live Earth image or the selected UTC.",
+    "This variant contains land, ocean color and sea ice; no separate atmospheric cloud layer is supplied.",
+    "Visible continents, seasonal surface appearance and camera orientation must not be presented as the computed view from the selected lunar location.",
+    "The texture does not determine Earth visibility, radio access, phase or illumination; those belong to the geometric/model calculations."
+  ],
+  "asset": "earth-orbital.jpg",
+  "downloaded_at_utc": "2026-11-16T00:28:35.167116+00:00",
+  "width": 2048,
+  "height": 1024,
+  "mode": "RGB",
+  "bytes": 266599,
+  "sha256": "d4dc80a6ef571939d0abe04a9bed3d3d1e6cd63e59514be1c5e43a6b069e6f1e",
+  "source_verified_http_status": 200,
+  "local_transformations": "None: original official NASA JPEG bytes copied without cropping, resizing, re-encoding or color changes.",
+  "ai_generated": false,
+  "ai_image_editing": false,
+  "visually_inspected": true
+}

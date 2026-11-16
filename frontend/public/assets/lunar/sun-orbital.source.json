@@ -1,0 +1,58 @@
+{
+  "title": "SDO/HMI Quick-Look Continuum — uncolored HMI intensitygram",
+  "source_url": "https://sdo.gsfc.nasa.gov/assets/img/browse/2026/11/15/20261115_235238_1024_HMII.jpg",
+  "source_page": "https://sdo.gsfc.nasa.gov/data/",
+  "archive_directory": "https://sdo.gsfc.nasa.gov/assets/img/browse/2026/11/15/",
+  "instrument_description_url": "https://sdo.gsfc.nasa.gov/data/channels.php",
+  "credit": "Courtesy of NASA/SDO and the AIA, EVE, and HMI science teams.",
+  "date": {
+    "archive_filename": "20261115_235238_1024_HMII.jpg",
+    "archive_date": "2026-11-15",
+    "embedded_annotation": "SDO/HMI Quick-Look Continuum: 2026.11.15_23:55:15_TAI",
+    "server_last_modified": "2026-11-16T00:20:06Z",
+    "note": "Archive filename and embedded TAI annotation are recorded as supplied; no UTC conversion or selected-time synchronization is claimed."
+  },
+  "format": "JPEG",
+  "asset_type": "Monochrome full-disk solar continuum image against black; not an equirectangular sphere map",
+  "instrument": {
+    "mission": "Solar Dynamics Observatory (SDO)",
+    "instrument": "Helioseismic and Magnetic Imager (HMI)",
+    "product": "Uncolored intensitygram / quick-look continuum near the visible Fe I 6173 Å absorption line",
+    "euv": false,
+    "false_color": false
+  },
+  "recommended_use": "Optional camera-facing, depth-tested 3D disk/sprite, with a circular mask; keep the black surround and bottom-left annotation outside the displayed disk. Use an sRGB texture color space for display. The disk is not a texture atlas for a sphere.",
+  "image_geometry": {
+    "normalized_center": [
+      0.5,
+      0.5
+    ],
+    "approximate_disk_radius_fraction_of_image_width": 0.467,
+    "inspection_method": "Visual inspection and central-axis intensity bounds; pixel values above 2 extend x=34..990, y=34..990. This is a display-mask hint, not a measured solar angular radius.",
+    "background": "black",
+    "alpha_channel": false,
+    "annotation_outside_disk": "small source/time text at the bottom-left edge of the image"
+  },
+  "rights": {
+    "statement": "SDO states that its images and movies are not copyrighted unless explicitly noted, and encourages educational reuse with attribution. No copyright exception is shown on this source image.",
+    "policy_url": "https://sdo.gsfc.nasa.gov/gallery/copyright/"
+  },
+  "appearance_limits": [
+    "Fixed instrument-filtered continuum image, not a live solar image or the selected UTC.",
+    "Grayscale intensity display, not a calibrated human-eye color or brightness simulation; it is not an EUV false-color solar image.",
+    "Sunspot pattern, instrument orientation and measured pixel brightness are illustrative only and must not be interpreted as selected-date surface detail or solar power.",
+    "The asset does not determine the modeled Sun direction, apparent angular size or terrain obstruction."
+  ],
+  "asset": "sun-orbital.jpg",
+  "downloaded_at_utc": "2026-11-16T00:28:35.167810+00:00",
+  "width": 1024,
+  "height": 1024,
+  "mode": "L",
+  "bytes": 132916,
+  "sha256": "cf0e477b1f906ed89a3f99f23fd6185af039dfb7caef357e89830e39e7569a63",
+  "source_verified_http_status": 200,
+  "local_transformations": "None: original official NASA JPEG bytes copied without cropping, resizing, re-encoding or color changes.",
+  "ai_generated": false,
+  "ai_image_editing": false,
+  "visually_inspected": true
+}

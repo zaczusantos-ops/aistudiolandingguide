@@ -22,6 +22,19 @@
 .guide-shell--clean .hud-top-center > .hud-btn { pointer-events: auto; }
 .guide-shell--clean .ab-summary-card { border: 0; background: rgba(0, 0, 0, 0.8); }
 .guide-shell--clean .ab-card-text strong { max-width: 300px; }
+.hero-walk-link {
+  min-height: 44px;
+  padding: 8px 4px;
+  background: transparent;
+  color: #f4f4f5;
+  font-size: 1rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.hero-walk-link:focus-visible { outline: 2px solid white; outline-offset: 4px; }
+.time-pill-readout .analysis-period-sr { display: block; position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.guide-shell--clean .time-pill-readout .scene-scale-note { display: block; color: #c7c7cf; }
 .clean-view-options {
   top: 76px;
   left: 50%;
@@ -48,20 +61,13 @@
   .clean-view-options { top: 174px; }
 }
 
-.orbital-direction-note {
-  position: absolute;
-  top: 116px;
-  left: 28px;
-  z-index: 5;
-  max-width: min(480px, calc(100vw - 56px));
-  margin: 0;
-  color: #c7c7cf;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  pointer-events: none;
-  text-shadow: 0 1px 3px #000;
-}
-.orbital-observer-note { display: block; }
+/* Reference poster is a loading/failure fallback, never a pickable map. */
+.viewport-poster { position: absolute; left: 50%; top: 50%; z-index: 2; width: min(72vmin, 580px); height: auto; transform: translate(-50%, -50%); pointer-events: none; }
+.guide-shell--clean .viewport-status { top: 88px; left: 28px; padding: 0; background: transparent; font-size: 12px; }
+@media (min-width: 900px) and (min-aspect-ratio: 1/1) { .viewport-poster.is-hero { left: 67%; } }
+@media (max-width: 899px), (max-aspect-ratio: 1/1) { .viewport-poster.is-hero { opacity: 0.5; } }
 @media (max-width: 820px) {
-  .orbital-direction-note { top: 164px; left: 16px; max-width: calc(100vw - 32px); }
+  .guide-shell--clean .hud-top-left .overview-label { display: none; }
+  .guide-shell--clean .hud-top-right { gap: 2px; }
+  .guide-shell--clean .viewport-status { top: 122px; left: 16px; }
 }

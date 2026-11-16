@@ -81,9 +81,9 @@ function compactReading(sun: VisibilityReading, earth: VisibilityReading, geomet
   const light = sun.diskState === 'full' ? 'Sunlit' : sun.diskState === 'partial' ? 'Partial Sun' : 'No direct Sun';
   const view = earth.criterion === 'center'
     ? `Earth center ${earth.centerPosition}`
-    : earth.criterionSatisfied ? 'Earth fully clear'
-      : earth.diskState === 'hidden' ? 'Earth out of view'
-        : earth.diskState === 'partial' ? 'Earth partly clear' : 'Earth at skyline';
+    : earth.criterionSatisfied ? 'Earth above local horizon'
+      : earth.diskState === 'hidden' ? 'Earth below local horizon'
+        : earth.diskState === 'partial' ? 'Earth partly above horizon' : 'Earth at local skyline';
   return `${light} · ${view}`;
 }
 

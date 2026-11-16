@@ -18,6 +18,7 @@ interface DataDrawerProps {
   onChangeOffset: (slotIdx: number, xNorm: number, yNorm: number) => void;
   onChangeConfig: (next: EngineeringConfig) => void;
   scenarioActions?: React.ReactNode;
+  onOpenCharts?: () => void;
   onClose: () => void;
 }
 
@@ -29,7 +30,7 @@ const PANEL_NAMES: Record<PanelMode, string> = {
 
 export const DataDrawer: React.FC<DataDrawerProps> = ({
   entries, readouts, activeSlotIdx, onSelectActiveSlot, slice, periodStartUtc, periodEndUtc,
-  config, provenance, onChangeOffset, onChangeConfig, scenarioActions, onClose,
+  config, provenance, onChangeOffset, onChangeConfig, scenarioActions, onOpenCharts, onClose,
 }) => {
   const clpsLimit = provenance.conventions.clps_slope_limit_deg;
   const activeIndex = entries[activeSlotIdx] ? activeSlotIdx : 0;
@@ -163,6 +164,7 @@ export const DataDrawer: React.FC<DataDrawerProps> = ({
     <aside className="side-drawer drawer-right condition-panel" aria-label="Site conditions and model details">
       <div className="drawer-header">
         <h2>Conditions</h2>
+        {onOpenCharts && <button type="button" id="overtime-trigger" className="btn-link-sm" aria-expanded="false" onClick={onOpenCharts}>Over time</button>}
         <button type="button" className="btn-close-panel" onClick={onClose} aria-label="Close conditions panel">Close</button>
       </div>
       <div className="drawer-scroll">

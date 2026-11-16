@@ -31,9 +31,8 @@ describe('optional walk integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start playback' }));
     act(() => { vi.advanceTimersByTime(360); });
     expect(context.getAttribute('data-utc')).not.toBe(initialUtc);
-    fireEvent.click(screen.getByRole('button', { name: 'View' }));
     const selectedUtc = context.getAttribute('data-utc');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Perspective' }), { target: { value: 'astronaut' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Moon walk' }));
     const epoch = screen.getByTestId('walk').getAttribute('data-epoch');
     expect(context).toHaveAttribute('data-mode', 'astronaut');
     expect(screen.queryByRole('button', { name: 'Time' })).not.toBeInTheDocument();
@@ -48,5 +47,13 @@ describe('optional walk integration', () => {
     expect(context).toHaveAttribute('data-utc', selectedUtc);
     expect(screen.getByRole('button', { name: 'View' })).toHaveFocus();
     expect(screen.getByRole('button', { name: 'Start playback' })).toBeInTheDocument();
+  });
+
+  it('offers a direct walk entry on the first screen', () => {
+    render(<LegacyApp />);
+    expect(screen.getByRole('button', { name: 'Open Explorer' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Moon walk' }));
+    expect(screen.getByTestId('walk')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Perspective' })).not.toBeInTheDocument();
   });
 });

@@ -178,7 +178,10 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     }
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
     expect(screen.getByRole('button', { name: /Return to overview/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Conditions' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Conditions' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Moon walk' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Over time' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Conditions' }));
     expect(screen.getByRole('button', { name: 'Over time' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Place' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-expanded', 'false');
@@ -212,8 +215,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Named sites' }), { target: { value: 'malapert_massif' } });
     expect(screen.getByRole('button', { name: 'Places (3)' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Perspective' }), { target: { value: 'astronaut' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Moon walk' }));
     expect(screen.getByTestId('astronaut-stage')).toBeInTheDocument();
     expect(screen.getByRole('application')).toHaveAccessibleName(/illustrative Moon walk/i);
     expect(screen.queryByRole('button', { name: 'Conditions' })).not.toBeInTheDocument();
@@ -230,6 +232,7 @@ describe('Lunar Landing Site Navigator — Landing Guide', () => {
   it('uses one task panel at a time and separates selected UTC from the optional analysis period', () => {
     render(<App />);
     fireEvent.click(screen.getAllByRole('button', { name: /Open Explorer/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Conditions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Over time' }));
     expect(screen.queryByRole('complementary', { name: 'Site conditions and model details' })).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Visible solar disk fraction/i })).toBeInTheDocument();

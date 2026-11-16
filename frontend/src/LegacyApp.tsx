@@ -168,8 +168,12 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
         if (activePopover !== null) {
           document.getElementById(activePopover === 'selection' ? 'place-trigger' : `${activePopover}-trigger`)?.focus();
           setActivePopover(null);
-        } else if (chartsOpen || dataOpen) {
-          document.getElementById(dataOpen ? 'conditions-trigger' : 'overtime-trigger')?.focus();
+        } else if (chartsOpen) {
+          setChartsOpen(false);
+          setDataOpen(true);
+          requestAnimationFrame(() => document.getElementById('overtime-trigger')?.focus());
+        } else if (dataOpen) {
+          document.getElementById('conditions-trigger')?.focus();
           setChartsOpen(false);
           setDataOpen(false);
         }
@@ -345,7 +349,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
       setEpochIdx(sampleIdx);
     }
     setHasStarted(true);
-    setDataOpen(true);
+    setDataOpen(Boolean(siteId || sampleIdx !== undefined));
     setChartsOpen(false);
     setActivePopover(null);
     if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
@@ -542,6 +546,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
           horizonAzDeg={dataset.horizon_azimuths_deg}
           missionWindow={dataset.mission_window}
           onStart={handleStart}
+          onWalk={() => { setHasStarted(true); handleChangeViewport('astronaut'); }}
         />
       )}
 
@@ -556,26 +561,19 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               aria-label="Return to overview"
             >
               <span aria-hidden="true">←</span>
-              <span>Overview</span>
+              <span className="overview-label">Overview</span>
             </button>
             <button
               type="button"
-              className={`hud-btn ${chartsOpen ? 'active' : ''}`}
-              id="overtime-trigger"
-              aria-expanded={chartsOpen}
-              onClick={toggleCharts}
+              className="hud-btn"
+              onClick={() => handleChangeViewport('astronaut')}
             >
-              <span>Over time</span>
+              <span>Moon walk</span>
             </button>
           </div>
 
           {/* Top-Center: Moon | Topography */}
           <div className="hud-top-center">
-            <button type="button" className={`hud-btn ${activePopover === 'view' ? 'active' : ''}`}
-              id="view-trigger" aria-expanded={activePopover === 'view'} onClick={() => togglePopover('view')}>
-              View
-            </button>
-
             {surfaceMode === 'topography' && (
               <div className="topo-legend-bar" role="region" aria-label="Topographic elevation scale in kilometers">
                 <span className="topo-legend-title">LOLA Elevation</span>
@@ -591,6 +589,10 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
 
           {/* Top-Right: Sites (1–4) */}
           <div className="hud-corner hud-top-right">
+            <button type="button" className={`hud-btn ${activePopover === 'view' ? 'active' : ''}`}
+              id="view-trigger" aria-expanded={activePopover === 'view'} onClick={() => togglePopover('view')}>
+              View
+            </button>
             <button
               type="button"
               className={`hud-btn ${activePopover === 'selection' ? 'active' : ''}`}
@@ -688,7 +690,8 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
               </button>
               <div className="time-pill-readout">
                 <strong>{formatUtcShort(currentUtc)}</strong>
-                <span>{slice.epochCount < 2 ? "One saved instant" : `${slice.totalHours}h analysis period`}</span>
+                <span className="analysis-period-sr">{slice.epochCount < 2 ? "One saved instant" : `${slice.totalHours}h analysis period`}</span>
+                <span className="scene-scale-note" aria-label="Scene sizes and distances are not to scale" title="Sizes and distances are illustrative. Open View for image sources and model notes.">Scene not to scale</span>
               </div>
               <button
                 type="button"
@@ -716,8 +719,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
 
           {/* Popovers */}
           {activePopover === 'view' && (
-            <ViewOptions viewportMode={viewportMode} surfaceMode={surfaceMode}
-              onChangeViewport={handleChangeViewport}
+            <ViewOptions surfaceMode={surfaceMode}
               onChangeSurface={setSurfaceMode}
               onClose={() => { setActivePopover(null); document.getElementById('view-trigger')?.focus(); }} />
           )}
@@ -790,7 +792,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                 setIsPlaying(false);
                 setEpochIdx(idx);
               }}
-              onClose={() => { setChartsOpen(false); document.getElementById('overtime-trigger')?.focus(); }}
+              onClose={() => { setChartsOpen(false); setDataOpen(true); requestAnimationFrame(() => document.getElementById('overtime-trigger')?.focus()); }}
             />
           )}
 
@@ -822,6 +824,7 @@ export function LegacyApp({ dataset = defaultDataset }: AppProps) {
                   onShare={handleShare}
                 />
               )}
+              onOpenCharts={toggleCharts}
               onClose={() => { setDataOpen(false); document.getElementById('conditions-trigger')?.focus(); }}
             />
           )}

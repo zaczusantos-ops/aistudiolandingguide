@@ -7,6 +7,7 @@ interface HomeOverlayProps {
   horizonAzDeg: number[];
   missionWindow: MissionWindow;
   onStart: (siteId?: string, epochIdx?: number) => void;
+  onWalk?: () => void;
 }
 
 interface NasaExplainerVideoProps {
@@ -83,7 +84,7 @@ function exampleTime(timestamp: string): string {
   })} UTC`;
 }
 
-export const HomeOverlay: React.FC<HomeOverlayProps> = ({ sites, missionWindow, onStart }) => {
+export const HomeOverlay: React.FC<HomeOverlayProps> = ({ sites, missionWindow, onStart, onWalk }) => {
   const landmarkSites = useMemo(() => {
     const wantedIds = [
       'shackleton_ridge',
@@ -132,6 +133,7 @@ export const HomeOverlay: React.FC<HomeOverlayProps> = ({ sites, missionWindow, 
             <button type="button" className="btn-bw-primary" onClick={() => onStart()}>
               <span>Open Explorer</span><span aria-hidden="true">→</span>
             </button>
+            {onWalk && <button type="button" className="hero-walk-link" onClick={onWalk}>Moon walk <span aria-hidden="true">→</span></button>}
           </div>
           <p className="hero-drag-hint">Drag the Moon to rotate it</p>
         </div>
